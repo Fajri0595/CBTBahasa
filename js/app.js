@@ -1416,9 +1416,12 @@
     function printAccessCodes() {
       const idUjian = document.getElementById('printCodesExamSelect').value;
       const all = window._participantsCache || [];
-      const filtered = idUjian ? all.filter(p => p.ID_Ujian_Target === idUjian) : all;
+      // Hanya kode yang BELUM diakses (status 'Aktif') yang boleh dicetak/dibagikan —
+      // kode yang sudah 'Used' atau 'Expired' tidak berguna lagi untuk peserta baru.
+      let filtered = idUjian ? all.filter(p => p.ID_Ujian_Target === idUjian) : all;
+      filtered = filtered.filter(p => p.Status_Kode === 'Aktif');
     
-      if (!filtered.length) { showToast('Peringatan', 'Tidak ada kode akses untuk dicetak pada pilihan ini.', 'warning'); return; }
+      if (!filtered.length) { showToast('Peringatan', 'Tidak ada kode akses yang masih aktif (belum dipakai) untuk dicetak pada pilihan ini.', 'warning'); return; }
     
       const codesData = filtered.map(p => ({
         nama: p.Nama || '',
@@ -1436,9 +1439,11 @@
     function downloadAccessCodesCsv() {
       const idUjian = document.getElementById('printCodesExamSelect').value;
       const all = window._participantsCache || [];
-      const filtered = idUjian ? all.filter(p => p.ID_Ujian_Target === idUjian) : all;
+      // Sama seperti cetak: hanya kode berstatus 'Aktif' (belum diakses) yang diunduh.
+      let filtered = idUjian ? all.filter(p => p.ID_Ujian_Target === idUjian) : all;
+      filtered = filtered.filter(p => p.Status_Kode === 'Aktif');
     
-      if (!filtered.length) { showToast('Peringatan', 'Tidak ada kode akses untuk diunduh pada pilihan ini.', 'warning'); return; }
+      if (!filtered.length) { showToast('Peringatan', 'Tidak ada kode akses yang masih aktif (belum dipakai) untuk diunduh pada pilihan ini.', 'warning'); return; }
     
       const rows = filtered.map(p => [p.Nama || '', p.Kontak || '', p.Kode_Akses, getExamNameById(p.ID_Ujian_Target), p.Status_Kode]);
       const csv = 'Nama,Kontak,Kode Akses,Ujian Target,Status\n' + rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
@@ -2157,4 +2162,3 @@
         .withFailureHandler(err => showToast('Error', err.message, 'danger'))
         .importParticipantsBatch(idUjian, parsedPesertaCsv, 'LANG');
     }
-    
