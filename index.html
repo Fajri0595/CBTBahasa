@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CBT Bahasa — Sistem Ujian Kebahasaan</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="loadingOverlay" class="loading-overlay">
+  <div class="spinner-brand"></div>
+  <p style="margin-top:14px;color:var(--text-muted);font-size:13px;">Memuat CBT Bahasa...</p>
+</div>
+
+<div id="toastContainer"></div>
+
+<!-- ============================================================ -->
+<!-- AUTH VIEWS -->
+<!-- ============================================================ -->
+
+<!-- W-01: Identity & Access Code Entry -->
+<div id="view-participant-entry" class="auth-wrap">
+  <div class="auth-card">
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:-10px;">
+      <button class="btn-icon-sm" title="Ganti Bahasa / Switch Language" onclick="toggleLanguage()"><span id="langToggleLabel3">ID</span></button>
+      <button class="btn-icon-sm" title="Mode Gelap / Dark Mode" onclick="toggleTheme()"><i class="bi bi-moon-stars" id="themeToggleIcon3"></i></button>
+    </div>
+    <div class="auth-logo"><i class="bi bi-mortarboard-fill"></i></div>
+    <h2 style="text-align:center;margin-bottom:6px;" data-i18n="entryTitle">Enter Your Details to Start</h2>
+    <p style="text-align:center;color:var(--text-muted);font-size:13.5px;margin-bottom:22px;" data-i18n="entrySubtitle">
+      Lengkapi data diri dan kode akses untuk memulai sesi ujian kebahasaan.
+    </p>
+    <form id="formParticipantEntry" onsubmit="handleParticipantEntry(event)">
+      <label class="field-label" data-i18n="lblFullName">Nama Lengkap</label>
+      <input type="text" id="pNama" class="input-cbt" placeholder="Contoh: Budi Santoso" required>
+      <div style="height:14px;"></div>
+      <label class="field-label">Email / Kontak WhatsApp</label>
+      <input type="text" id="pKontak" class="input-cbt" placeholder="nama.peserta@domain.ac.id" required>
+      <div style="height:14px;"></div>
+      <label class="field-label" data-i18n="lblAccessCode">Kode Akses (Diberikan Admin)</label>
+      <input type="text" id="pKode" class="input-cbt" placeholder="Contoh: LANG-OCT-889" required style="text-transform:uppercase;">
+      <div id="entryError" class="field-error"></div>
+      <button type="submit" class="btn-cbt btn-cbt-primary" style="width:100%;justify-content:center;margin-top:18px;padding:13px;">
+        <span data-i18n="btnContinue">Continue / Mulai Sesi</span> <i class="bi bi-arrow-right"></i>
+      </button>
+    </form>
+    <p style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:16px;">
+      Butuh akses staf? <a href="#" onclick="showView('view-staff-login')" style="color:var(--primary);font-weight:600;">Staff Login</a>
+    </p>
+    <p style="text-align:center;font-size:10.5px;color:var(--border-color);margin-top:10px;" id="appVersionBadgeLogin1">Build: -</p>
+  </div>
+</div>
+
+<!-- W-06: Staff Login -->
+<div id="view-staff-login" class="auth-wrap teal-bg" style="display:none;">
+  <div class="auth-card">
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:-10px;">
+      <button class="btn-icon-sm" title="Ganti Bahasa / Switch Language" onclick="toggleLanguage()"><span id="langToggleLabel4">ID</span></button>
+      <button class="btn-icon-sm" title="Mode Gelap / Dark Mode" onclick="toggleTheme()"><i class="bi bi-moon-stars" id="themeToggleIcon4"></i></button>
+    </div>
+    <div class="auth-logo"><i class="bi bi-mortarboard-fill"></i></div>
+    <h2 style="text-align:center;margin-bottom:4px;" data-i18n="staffLoginTitle">Staff Login</h2>
+    <p style="text-align:center;color:var(--text-muted);font-size:13px;margin-bottom:20px;" data-i18n="staffLoginSubtitle">Portal Khusus Dosen Penguji & Administrator</p>
+    <div class="role-toggle">
+      <button type="button" id="btnRoleAdmin" class="active" onclick="setStaffRole('admin')"><i class="bi bi-shield-check"></i> Admin</button>
+      <button type="button" id="btnRoleDosen" onclick="setStaffRole('dosen')"><i class="bi bi-person-badge"></i> Dosen Penguji</button>
+    </div>
+    <form id="formStaffLogin" onsubmit="handleStaffLogin(event)">
+      <label class="field-label" data-i18n="lblUsername">Username / NIP</label>
+      <input type="text" id="sUsername" class="input-cbt" placeholder="admin.pusatbahasa" required>
+      <div style="height:14px;"></div>
+      <label class="field-label">Password</label>
+      <input type="password" id="sPassword" class="input-cbt" placeholder="••••••••" required>
+      <div id="staffLoginError" class="field-error"></div>
+      <button type="submit" class="btn-cbt btn-cbt-teal" style="width:100%;justify-content:center;margin-top:18px;padding:13px;"><span data-i18n="btnStaffLogin">Masuk ke Dashboard Staf</span></button>
+    </form>
+    <p style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:16px;">
+      <a href="#" onclick="showView('view-participant-entry')" style="color:var(--primary);font-weight:600;">← Kembali ke Portal Peserta</a>
+    </p>
+    <p style="text-align:center;font-size:10.5px;color:var(--border-color);margin-top:10px;" id="appVersionBadgeLogin2">Build: -</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PARTICIPANT PORTAL -->
+<!-- ============================================================ -->
+<div id="view-participant-app" class="app-shell" style="display:none;">
+  <main class="app-main" style="margin-left:0;width:100%;">
+    <div class="app-topbar">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="auth-logo" style="width:34px;height:34px;font-size:15px;border-radius:8px;"><i class="bi bi-mortarboard-fill"></i></div>
+        <strong>CBT Bahasa</strong>
+      </div>
+      <div class="topbar-user">
+        <button class="btn-icon-sm" title="Ganti Bahasa / Switch Language" onclick="toggleLanguage()"><span id="langToggleLabel1">ID</span></button>
+        <button class="btn-icon-sm" title="Mode Gelap / Dark Mode" onclick="toggleTheme()"><i class="bi bi-moon-stars" id="themeToggleIcon1"></i></button>
+        <span id="participantNameLabel" style="font-size:13.5px;font-weight:600;"></span>
+        <div class="avatar-circle" id="participantAvatar">-</div>
+      </div>
+    </div>
+
+    <!-- W-02: Available Exams List -->
+    <section id="section-examList" class="content-section active app-content">
+      <div class="page-header">
+        <div>
+          <h2 data-i18n="hAvailableExams">Available Exams</h2>
+          <p>Pilih ujian yang ditugaskan kepada Anda sesuai jadwal rombel.</p>
+        </div>
+      </div>
+      <div id="examListContainer"></div>
+    </section>
+
+    <!-- W-03: Exam Session -->
+    <section id="section-examSession" class="content-section">
+      <div class="exam-shell">
+        <aside class="exam-sidebar">
+          <div>
+            <div style="font-size:12px;opacity:.75;">Sesi Ujian</div>
+            <div style="font-weight:700;font-family:'Poppins';font-size:15px;" id="examSessionTitle">-</div>
+          </div>
+          <div class="section-badge" id="currentSectionBadge"><i class="bi bi-headphones"></i> Section 1: Listening</div>
+          <div class="timer-card" id="timerCard">
+            <div style="font-size:11.5px;opacity:.8;" data-i18n="lblTimeLeft">Sisa Waktu</div>
+            <div class="timer-value" id="timerDisplay">00:00:00</div>
+          </div>
+          <div>
+            <div style="font-size:11.5px;opacity:.8;margin-bottom:8px;"><span data-i18n="lblQuestionNav">Navigasi Soal</span> — <span id="answeredCount">0</span>/<span id="totalQCount">0</span></div>
+            <div class="q-nav-grid" id="qNavGrid"></div>
+          </div>
+          <button class="btn-cbt btn-cbt-primary" style="width:100%;justify-content:center;margin-top:auto;" onclick="goToReview()">
+            <i class="bi bi-list-check"></i> <span data-i18n="btnReviewAll">Tinjau Semua Jawaban</span>
+          </button>
+        </aside>
+        <div class="exam-main">
+          <div class="q-topbar">
+            <button class="btn-cbt btn-cbt-ghost" onclick="prevQuestion()"><i class="bi bi-arrow-left"></i> Sebelumnya</button>
+            <div class="q-title">Question <span id="qCurrentNum">1</span> of <span id="qTotalNum">30</span></div>
+            <button class="btn-cbt btn-cbt-ghost" onclick="nextQuestion()">Selanjutnya <i class="bi bi-arrow-right"></i></button>
+          </div>
+          <div class="card-cbt">
+            <div id="audioPlayerWrap"></div>
+            <div id="passageWrap"></div>
+            <div id="questionText" style="font-size:16px;font-weight:600;margin-bottom:16px;"></div>
+            <div id="optionsWrap"></div>
+            <div style="text-align:right;margin-top:16px;">
+              <button class="btn-cbt btn-cbt-primary" onclick="nextQuestion()">Simpan &amp; Lanjut <i class="bi bi-arrow-right"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- W-04: Review Answers -->
+    <section id="section-examReview" class="content-section app-content">
+      <div class="page-header"><div><h2 data-i18n="hReviewAnswers">Review Your Answers</h2><p data-i18n="pReviewAnswers">Pastikan seluruh soal terisi sebelum submit final.</p></div></div>
+      <div id="reviewWarningBox"></div>
+      <div id="reviewTabsWrap" class="tab-pills"></div>
+      <div class="card-cbt" id="reviewGridWrap" style="margin-top:8px;"></div>
+      <button class="btn-cbt btn-cbt-primary" style="width:100%;justify-content:center;margin-top:18px;padding:14px;" onclick="confirmSubmitExam()">
+        <i class="bi bi-check-circle-fill"></i> <span data-i18n="btnSubmitFinal">Selesaikan & Kirim Ujian (Submit Final)</span>
+      </button>
+    </section>
+
+    <!-- W-05: Score Result -->
+    <section id="section-scoreResult" class="content-section">
+      <div class="auth-wrap" style="min-height:80vh;">
+        <div class="auth-card" style="text-align:center;">
+          <div style="width:90px;height:90px;border-radius:50%;background:var(--success);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+            <i class="bi bi-check-lg" style="font-size:40px;color:#fff;"></i>
+          </div>
+          <span class="badge-pill badge-success" style="margin-bottom:10px;"><span class="dot"></span> Ujian Berhasil Diserahkan</span>
+          <h2 data-i18n="hExamCompleted">Exam Completed!</h2>
+          <p style="color:var(--text-muted);font-size:13.5px;">Data jawaban Anda telah tersimpan permanen di basis data institusi.</p>
+          <div class="card-cbt" style="margin-top:18px;background:var(--bg-canvas);">
+            <div style="font-size:11.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;" data-i18n="lblTotalScore">Total Nilai Konversi (TOEFL Score)</div>
+            <div style="font-family:'Poppins';font-size:48px;font-weight:700;color:var(--primary);" id="finalScoreDisplay">-</div>
+            <div id="passStatusBadge" style="margin:10px 0;"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:14px;">
+              <div class="card-cbt" style="padding:12px;"><div style="font-size:11px;color:var(--text-muted);">Listening</div><div style="font-weight:700;" id="scoreListeningBox">-</div></div>
+              <div class="card-cbt" style="padding:12px;"><div style="font-size:11px;color:var(--text-muted);">Structure</div><div style="font-weight:700;" id="scoreGrammarBox">-</div></div>
+              <div class="card-cbt" style="padding:12px;"><div style="font-size:11px;color:var(--text-muted);">Reading</div><div style="font-weight:700;" id="scoreReadingBox">-</div></div>
+            </div>
+          </div>
+          <p style="font-size:11.5px;color:var(--text-muted);margin-top:14px;">Sesuai regulasi akademik, kunci jawaban tidak dipublikasikan ke peserta.</p>
+          <button class="btn-cbt btn-cbt-primary" style="width:100%;justify-content:center;margin-top:10px;padding:12px;" onclick="logoutParticipant()"><span data-i18n="btnBackToStart">Kembali ke Awal</span></button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ============================================================ -->
+<!-- STAFF PORTAL (Dosen + Admin) — shared sidebar shell -->
+<!-- ============================================================ -->
+<div id="view-staff-app" class="app-shell" style="display:none;">
+  <nav class="app-sidebar" id="staffSidebar">
+    <div class="brand">
+      <div class="auth-logo" style="width:36px;height:36px;font-size:16px;border-radius:10px;margin:0;"><i class="bi bi-mortarboard-fill"></i></div>
+      <div><div class="name">CBT Bahasa</div><div class="sub" id="staffPortalLabel">Dosen Portal</div></div>
+    </div>
+    <div class="sidebar-nav" id="staffNavMenu"></div>
+    <div class="sidebar-footer">
+      <div class="quota-badge"><i class="bi bi-hdd"></i> GAS Engine Active</div>
+      <div class="quota-badge" id="appVersionBadge" style="opacity:.6;">Build: -</div>
+      <a href="#" class="btn-logout" onclick="logoutStaff()"><i class="bi bi-box-arrow-left"></i> Keluar (Logout)</a>
+    </div>
+  </nav>
+
+  <main class="app-main">
+    <div class="app-topbar">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button class="hamburger-btn" onclick="document.getElementById('staffSidebar').classList.toggle('show')"><i class="bi bi-list"></i></button>
+        <div class="search-box"><i class="bi bi-search"></i> <span>Cari ujian, soal, atau peserta...</span></div>
+      </div>
+      <div class="topbar-user">
+        <button class="btn-icon-sm" title="Ganti Bahasa / Switch Language" onclick="toggleLanguage()"><span id="langToggleLabel2">ID</span></button>
+        <button class="btn-icon-sm" title="Mode Gelap / Dark Mode" onclick="toggleTheme()"><i class="bi bi-moon-stars" id="themeToggleIcon2"></i></button>
+        <i class="bi bi-bell" style="font-size:18px;color:var(--text-muted);"></i>
+        <div>
+          <div style="font-size:13px;font-weight:600;" id="staffNameLabel">-</div>
+          <div style="font-size:11px;color:var(--text-muted);" id="staffRoleLabel">-</div>
+        </div>
+        <div class="avatar-circle" id="staffAvatar">-</div>
+      </div>
+    </div>
+
+    <!-- ══ DOSEN: Dashboard "My Exams" ══ -->
+    <section id="section-dosenDashboard" class="content-section app-content">
+      <div class="page-header"><div><h2 data-i18n="hMyExams">My Exams (Ujian Saya)</h2><p data-i18n="pMyExams">Kelola paket ujian kebahasaan yang Anda buat.</p></div>
+        <button class="btn-cbt btn-cbt-primary" onclick="openCreateExamForm()"><i class="bi bi-plus-lg"></i> <span data-i18n="btnCreateExam">Buat Ujian Baru</span></button>
+      </div>
+      <div class="card-cbt" style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px;" id="dosenStatCards"></div>
+      <div class="table-wrap"><table class="table-cbt" id="dosenExamTable">
+        <thead><tr><th>Nama Ujian & Kode</th><th>Sesi & Soal</th><th>Status</th><th>Peserta</th><th>Jadwal</th><th>Aksi</th></tr></thead>
+        <tbody id="dosenExamTableBody"></tbody>
+      </table></div>
+    </section>
+
+    <!-- ══ DOSEN: Create Exam ══ -->
+    <section id="section-createExam" class="content-section app-content">
+      <div class="breadcrumb-cbt"><a onclick="navigateTo('dosenDashboard')">← Kembali ke Ujian Saya</a></div>
+      <div class="page-header"><div><h2 id="createExamTitle">Buat Ujian Baru</h2><p>Lengkapi informasi dasar, jadwal, dan ketentuan ujian.</p></div></div>
+      <form id="formCreateExam" onsubmit="handleCreateExam(event)">
+        <input type="hidden" id="examIdEdit">
+        <div class="form-section-card">
+          <div class="fs-title"><i class="bi bi-card-text"></i> Informasi Dasar Ujian</div>
+          <div class="fs-sub">Nama dan deskripsi yang akan dibaca oleh peserta di halaman katalog.</div>
+          <label class="field-label">Nama Ujian *</label>
+          <input type="text" id="examNama" class="input-cbt" required placeholder="TOEFL-Style Institutional Language Proficiency Test">
+          <div style="height:14px;"></div>
+          <label class="field-label">Deskripsi & Instruksi Peserta</label>
+          <textarea id="examDeskripsi" class="input-cbt" rows="3" placeholder="Ujian komprehensif mengukur kemampuan bahasa..."></textarea>
+          <div id="dosenAssignWrap" style="display:none;margin-top:14px;">
+            <label class="field-label">Dosen Pengampu</label>
+            <select id="examDosenAssign" class="input-cbt">
+              <option value="ADMIN">Dikelola Langsung oleh Admin (Saya Sendiri)</option>
+            </select>
+            <div class="field-help">Tugaskan ujian ini ke dosen tertentu, atau biarkan dikelola langsung oleh Admin.</div>
+          </div>
+        </div>
+        <div class="form-section-card">
+          <div class="fs-title"><i class="bi bi-clock-history"></i> Durasi, Kelulusan & Jadwal</div>
+          <div class="form-grid-2">
+            <div><label class="field-label">Durasi Pengerjaan (menit) *</label><input type="number" id="examDurasi" class="input-cbt" required value="115"></div>
+            <div><label class="field-label">Passing Score *</label><input type="number" id="examPassing" class="input-cbt" required value="500"></div>
+            <div><label class="field-label">Tanggal & Jam Buka *</label><input type="datetime-local" id="examBuka" class="input-cbt" required></div>
+            <div><label class="field-label">Tanggal & Jam Tutup *</label><input type="datetime-local" id="examTutup" class="input-cbt" required></div>
+          </div>
+        </div>
+        <div class="sticky-actionbar">
+          <button type="button" class="btn-cbt btn-cbt-ghost" onclick="navigateTo('dosenDashboard')">Batal</button>
+          <button type="button" class="btn-cbt btn-cbt-outline" onclick="saveExam('Draft')">Simpan sebagai Draft</button>
+          <button type="submit" class="btn-cbt btn-cbt-primary">Simpan & Lanjut ke Upload Soal <i class="bi bi-arrow-right"></i></button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ══ DOSEN: Upload Questions CSV ══ -->
+    <section id="section-uploadCSV" class="content-section app-content">
+      <div class="breadcrumb-cbt"><a onclick="navigateTo('dosenDashboard')">← Kembali ke Ujian Saya</a></div>
+      <div class="page-header"><div><h2>Unggah Soal Massal (CSV)</h2><p>Ujian: <strong id="uploadCsvExamName">-</strong></p></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn-cbt btn-cbt-outline" onclick="openManageQuestions(window._currentUploadExamId, document.getElementById('uploadCsvExamName').textContent)"><i class="bi bi-list-ul"></i> Kelola Soal (Edit Manual)</button>
+          <button class="btn-cbt btn-cbt-outline" onclick="downloadCsvTemplate()"><i class="bi bi-download"></i> Unduh Template CSV</button>
+        </div>
+      </div>
+
+      <div class="card-cbt" style="margin-bottom:18px;">
+        <div class="fs-title" style="display:flex;align-items:center;gap:10px;font-weight:700;margin-bottom:4px;"><i class="bi bi-mic"></i> Upload Audio Pendukung (Opsional)</div>
+        <div class="fs-sub" style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">Unggah file audio listening langsung ke Google Drive dari sini, lalu salin link yang dihasilkan ke kolom <code>Link_Audio</code> pada CSV Anda.</div>
+        <input type="file" id="audioFileInput" accept="audio/*" style="display:none;" onchange="handleAudioFileSelected(event)">
+        <button type="button" class="btn-cbt btn-cbt-teal" onclick="document.getElementById('audioFileInput').click()"><i class="bi bi-upload"></i> Pilih & Upload File Audio</button>
+        <div id="audioUploadResult" style="margin-top:14px;"></div>
+      </div>
+
+      <div class="card-cbt" style="margin-bottom:18px;">
+        <div class="dropzone" id="csvDropzone" onclick="document.getElementById('csvFileInput').click()">
+          <div class="dz-icon"><i class="bi bi-cloud-upload"></i></div>
+          <div style="font-weight:600;">Tarik & Lepas Berkas CSV di Sini atau Klik untuk Memilih</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">Kolom: Sesi, Pertanyaan, Passage_Teks, Link_Audio, Pilihan_A-D, Jawaban_Benar, Poin</div>
+          <input type="file" id="csvFileInput" accept=".csv" style="display:none;" onchange="handleCsvSelected(event)">
+        </div>
+        <div id="csvFileName" style="text-align:center;margin-top:10px;font-size:13px;color:var(--text-muted);"></div>
+        <div style="text-align:center;margin-top:14px;">
+          <button class="btn-cbt btn-cbt-primary" onclick="validateAndPreviewCsv()"><i class="bi bi-check2-square"></i> Unggah & Validasi Format CSV</button>
+        </div>
+      </div>
+      <div id="csvValidationResult"></div>
+    </section>
+
+    <!-- ══ DOSEN/ADMIN: Kelola Soal (Edit Individual) ══ -->
+    <section id="section-manageQuestions" class="content-section app-content">
+      <div class="breadcrumb-cbt"><a onclick="navigateTo('dosenDashboard')">← Kembali ke Ujian Saya</a></div>
+      <div class="page-header"><div><h2 data-i18n="hManageQuestions">Kelola Soal</h2><p>Ujian: <strong id="manageQuestionsExamName">-</strong></p></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn-cbt btn-cbt-outline" onclick="openPullFromBankModal()"><i class="bi bi-collection"></i> Ambil dari Bank Soal</button>
+          <button class="btn-cbt btn-cbt-primary" onclick="openQuestionFormModal(null)"><i class="bi bi-plus-lg"></i> Tambah Soal Manual</button>
+        </div>
+      </div>
+      <div class="table-wrap"><table class="table-cbt">
+        <thead><tr><th>No</th><th>Sesi</th><th>Pertanyaan</th><th>Kunci</th><th>Poin</th><th>Aksi</th></tr></thead>
+        <tbody id="manageQuestionsTableBody"></tbody>
+      </table></div>
+    </section>
+
+    <!-- ══ DOSEN/ADMIN: Bank Soal Terpusat ══ -->
+    <section id="section-bankSoal" class="content-section app-content">
+      <div class="page-header"><div><h2>Bank Soal Terpusat</h2><p>Repositori soal bersama lintas-ujian & lintas-dosen. Tandai Topik & Level Kesulitan agar mudah ditarik ke ujian manapun.</p></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn-cbt btn-cbt-outline" onclick="downloadBankCsvTemplate()"><i class="bi bi-download"></i> Template CSV</button>
+          <button class="btn-cbt btn-cbt-outline" onclick="openImportBankCsvModal()"><i class="bi bi-file-earmark-arrow-up"></i> Import CSV</button>
+          <button class="btn-cbt btn-cbt-primary" onclick="openBankSoalFormModal(null)"><i class="bi bi-plus-lg"></i> Tambah ke Bank Soal</button>
+        </div>
+      </div>
+      <div class="filter-bar">
+        <select id="bankFilterSesi" class="input-cbt" onchange="loadBankSoalTable()">
+          <option value="">Semua Sesi</option><option value="Listening">Listening</option><option value="Structure">Structure</option><option value="Reading">Reading</option>
+        </select>
+        <select id="bankFilterTopik" class="input-cbt" onchange="loadBankSoalTable()"><option value="">Semua Topik</option></select>
+        <select id="bankFilterLevel" class="input-cbt" onchange="loadBankSoalTable()">
+          <option value="">Semua Level</option><option value="Mudah">Mudah</option><option value="Sedang">Sedang</option><option value="Sulit">Sulit</option>
+        </select>
+      </div>
+      <div class="table-wrap"><table class="table-cbt">
+        <thead><tr><th>Sesi</th><th>Topik</th><th>Level</th><th>Pertanyaan</th><th>Kunci</th><th>Aksi</th></tr></thead>
+        <tbody id="bankSoalTableBody"></tbody>
+      </table></div>
+    </section>
+
+    <!-- ══ ADMIN: Perbandingan Performa Antar Rombel ══ -->
+    <section id="section-rombelComparison" class="content-section app-content">
+      <div class="page-header"><div><h2>Perbandingan Performa Antar Rombel</h2><p>Bandingkan rata-rata skor & tingkat kelulusan antar kelompok/batch peserta.</p></div></div>
+      <div class="filter-bar">
+        <select id="rombelExamFilter" class="input-cbt" onchange="loadRombelComparison()"><option value="">Semua Ujian</option></select>
+      </div>
+      <div class="card-cbt" style="margin-bottom:20px;"><canvas id="chartRombelComparison" height="220"></canvas></div>
+      <div class="table-wrap"><table class="table-cbt">
+        <thead><tr><th>Rombel</th><th>Jumlah Peserta</th><th>Rata-rata Skor</th><th>Tertinggi</th><th>Terendah</th><th>Lulus</th><th>Tidak Lulus</th><th>Tingkat Kelulusan</th></tr></thead>
+        <tbody id="rombelComparisonTableBody"></tbody>
+      </table></div>
+    </section>
+
+    <!-- ══ DOSEN/ADMIN: Exam Results ══ -->
+    <section id="section-examResultsDosen" class="content-section app-content">
+      <div class="breadcrumb-cbt"><a onclick="navigateTo('dosenDashboard')">← Kembali ke Ujian Saya</a></div>
+      <div class="page-header"><div><h2>Hasil & Rekap Nilai Peserta</h2><p id="resultsExamNameLabel">-</p></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn-cbt btn-cbt-outline" onclick="openItemAnalysis(window._currentResultsExamId, document.getElementById('resultsExamNameLabel').textContent)"><i class="bi bi-bar-chart-steps"></i> Item Analysis</button>
+          <button class="btn-cbt btn-cbt-outline" onclick="downloadResultsExcel()"><i class="bi bi-file-earmark-excel"></i> Unduh Rekap (Excel)</button>
+        </div>
+      </div>
+      <div class="card-cbt" style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px;" id="dosenResultStatCards"></div>
+      <div class="table-wrap"><table class="table-cbt">
+        <thead><tr><th>Peserta</th><th>Listening</th><th>Structure</th><th>Reading</th><th>Total Skor</th><th>Status</th></tr></thead>
+        <tbody id="dosenResultsTableBody"></tbody>
+      </table></div>
+    </section>
+
+    <!-- ══ DOSEN/ADMIN: Item Analysis ══ -->
+    <section id="section-itemAnalysis" class="content-section app-content">
+      <div class="breadcrumb-cbt"><a onclick="navigateTo('dosenDashboard')">← Kembali ke Ujian Saya</a></div>
+      <div class="page-header"><div><h2>Item Analysis — Statistik Tingkat Kesulitan Soal</h2><p id="itemAnalysisExamName">-</p></div></div>
+      <div id="itemAnalysisSummary" style="margin-bottom:16px;"></div>
+      <div class="table-wrap"><table class="table-cbt">
+        <thead><tr><th>No</th><th>Sesi</th><th>Cuplikan Soal</th><th>Kunci</th><th>Benar/Total</th><th>% Benar</th><th>Tingkat Kesulitan</th><th>Distribusi Jawaban (A/B/C/D/Kosong)</th></tr></thead>
+        <tbody id="itemAnalysisTableBody"></tbody>
+      </table></div>
+    </section>
+
+    <!-- ══ ADMIN: Dashboard ══ -->
+    <section id="section-adminDashboard" class="content-section app-content">
+      <div class="page-header"><div><h2 data-i18n="hAdminDashboard">Admin Dashboard — Pusat Layanan Bahasa</h2><p data-i18n="pAdminDashboard">Ringkasan operasional sistem CBT secara real-time.</p></div></div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px;" id="adminStatCards"></div>
+      <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:16px;">
+        <div class="card-cbt"><h3 style="font-size:15px;">Distribusi Skor Ujian Kebahasaan</h3><canvas id="chartDistribusi" height="220"></canvas></div>
+        <div class="card-cbt">
+          <h3 style="font-size:15px;">Log Aktivitas Sistem Terkini</h3>
+          <div id="recentActivityList"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ ADMIN: Manage Lecturers ══ -->
+    <section id="section-manageLecturers" class="content-section app-content">
+      <div class="page-header"><div><h2 data-i18n="hManageLecturers">Manajemen Dosen Penguji</h2><p data-i18n="pManageLecturers">Kelola 5-10 akun dosen yang ditunjuk khusus untuk membuat soal.</p></div>
+        <button class="btn-cbt btn-cbt-primary" onclick="openAddLecturerModal()"><i class="bi bi-person-plus"></i> Tambah Dosen Baru</button>
+      </div>
+      <div class="table-wrap"><table class="table-cbt">
+        <thead><tr><th>Nama</th><th>Username</th><th>Status</th><th>Aksi</th></tr></thead>
+        <tbody id="lecturerTableBody"></tbody>
+      </table></div>
+    </section>
+
+    <!-- ══ ADMIN: Manage Participants & Access Codes ══ -->
+    <section id="section-manageParticipants" class="content-section app-content">
+      <div class="page-header"><div><h2 data-i18n="hManageParticipants">Manajemen Peserta & Kode Akses</h2><p data-i18n="pManageParticipants">Kelola token peserta agar sesi ujian tetap privat per-rombel.</p></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn-cbt btn-cbt-outline" onclick="openPrintCodesModal()"><i class="bi bi-printer"></i> Cetak / Unduh Kode Akses</button>
+          <button class="btn-cbt btn-cbt-outline" onclick="openImportParticipantsModal()"><i class="bi bi-file-earmark-arrow-up"></i> Import Peserta CSV</button>
+          <button class="btn-cbt btn-cbt-primary" onclick="openGenerateCodesModal()"><i class="bi bi-key"></i> Buat Kode Akses Massal</button>
+        </div>
+      </div>
+      <div class="table-wrap"><table class="table-cbt">
+        <thead><tr><th>Nama</th><th>Kontak</th><th>Rombel</th><th>Kode Akses</th><th>Ujian Target</th><th>Status</th><th>Aksi</th></tr></thead>
+        <tbody id="participantTableBody"></tbody>
+      </table></div>
+    </section>
+
+    <!-- ══ ADMIN: Manage Exams Overview ══ -->
+    <section id="section-manageExams" class="content-section app-content">
+      <div class="page-header"><div><h2 data-i18n="hManageExams">Katalog & Pengawasan Semua Ujian</h2><p data-i18n="pManageExams">Pantau seluruh ujian yang dibuat oleh semua dosen.</p></div></div>
+      <div class="table-wrap"><table class="table-cbt">
+        <thead><tr><th>Nama & Kode Ujian</th><th>Dosen Pembuat</th><th>Jadwal</th><th>Partisipasi</th><th>Status</th><th>Aksi</th></tr></thead>
+        <tbody id="allExamsTableBody"></tbody>
+      </table></div>
+    </section>
+
+    <!-- ══ ADMIN: Reports ══ -->
+    <section id="section-reports" class="content-section app-content">
+      <div class="page-header"><div><h2 data-i18n="hReports">Laporan Hasil & Rekapitulasi Global</h2><p data-i18n="pReports">Ekspor rekapan nilai terstandar institusi.</p></div>
+        <button class="btn-cbt btn-cbt-outline" onclick="downloadResultsExcel()"><i class="bi bi-file-earmark-excel"></i> Unduh Rekap Excel</button>
+      </div>
+      <div class="filter-bar">
+        <select id="reportExamFilter" class="input-cbt" onchange="loadGlobalReport()"><option value="">Semua Ujian</option></select>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px;" id="reportStatCards"></div>
+      <div class="table-wrap"><table class="table-cbt">
+        <thead><tr><th>Peserta</th><th>Ujian</th><th>Listening</th><th>Structure</th><th>Reading</th><th>Total</th><th>Status</th></tr></thead>
+        <tbody id="globalReportTableBody"></tbody>
+      </table></div>
+    </section>
+
+    <!-- ══ ADMIN: Activity Log ══ -->
+    <section id="section-activityLog" class="content-section app-content">
+      <div class="page-header"><div><h2 data-i18n="hActivityLog">Log Aktivitas & Audit Keamanan Sistem</h2><p data-i18n="pActivityLog">Rekam jejak kronologis seluruh aktivitas sistem.</p></div></div>
+      <div class="table-wrap"><table class="table-cbt">
+        <thead><tr><th>Waktu</th><th>Peran</th><th>Nama User</th><th>Aksi</th><th>Detail</th></tr></thead>
+        <tbody id="activityLogTableBody"></tbody>
+      </table></div>
+    </section>
+
+    <!-- ══ ADMIN: System Settings ══ -->
+    <section id="section-systemSettings" class="content-section app-content">
+      <div class="page-header"><div><h2 data-i18n="hSettings">Pengaturan Sistem & Parameter Ujian</h2><p data-i18n="pSettings">Konfigurasi ambang kelulusan standar dan durasi default.</p></div></div>
+      <form id="formSystemSettings" onsubmit="handleSaveSettings(event)">
+        <div class="form-section-card">
+          <div class="fs-title"><i class="bi bi-stars"></i> Standar Nilai & Durasi Default</div>
+          <div class="form-grid-2">
+            <div><label class="field-label">Default Passing Score</label><input type="number" id="settingPassing" class="input-cbt"></div>
+            <div><label class="field-label">Default Durasi (menit)</label><input type="number" id="settingDurasi" class="input-cbt"></div>
+          </div>
+        </div>
+        <div class="form-section-card">
+          <div class="fs-title"><i class="bi bi-sliders2"></i> Skala Konversi Nilai Akhir</div>
+          <div class="fs-sub">Digunakan untuk mengonversi persentase jawaban benar menjadi skor akhir. Ubah nilai ini jika institusi ingin memakai skala selain TOEFL (310-677) — misalnya skala 0-100.</div>
+          <div class="form-grid-2">
+            <div><label class="field-label">Skala Minimum</label><input type="number" id="settingSkalaMin" class="input-cbt"></div>
+            <div><label class="field-label">Skala Maksimum</label><input type="number" id="settingSkalaMax" class="input-cbt"></div>
+          </div>
+        </div>
+        <div class="sticky-actionbar">
+          <button type="submit" class="btn-cbt btn-cbt-primary">Simpan Perubahan Pengaturan</button>
+        </div>
+      </form>
+
+      <div class="form-section-card" style="margin-top:24px;">
+        <div class="fs-title"><i class="bi bi-heart-pulse"></i> Diagnostik Sistem</div>
+        <div class="fs-sub">Cek koneksi ke Google Sheets & struktur database tanpa perlu membuka DevTools browser.</div>
+        <button type="button" class="btn-cbt btn-cbt-outline" onclick="runDiagnostics()"><i class="bi bi-play-circle"></i> Jalankan Diagnostik Sistem</button>
+        <div id="diagnosticsResult" style="margin-top:16px;"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ============================================================ -->
+<!-- MODALS (shared) -->
+<!-- ============================================================ -->
+
+<div class="modal-overlay" id="modalAddLecturer">
+  <div class="modal-cbt">
+    <div class="modal-header-cbt"><span><i class="bi bi-person-plus"></i> Tambah Akun Dosen Penguji</span>
+      <button class="btn-cbt-ghost" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;" onclick="closeModal('modalAddLecturer')">&times;</button></div>
+    <div class="modal-body-cbt">
+      <label class="field-label">Nama Lengkap & Gelar Akademik *</label>
+      <input type="text" id="newLecturerName" class="input-cbt" placeholder="Dr. Siti Rahmawati, M.Pd." required>
+      <div style="height:14px;"></div>
+      <label class="field-label">Username Sistem *</label>
+      <input type="text" id="newLecturerUsername" class="input-cbt" placeholder="siti_rahmawati" required>
+    </div>
+    <div class="modal-footer-cbt">
+      <button class="btn-cbt btn-cbt-ghost" onclick="closeModal('modalAddLecturer')">Batal</button>
+      <button class="btn-cbt btn-cbt-primary" onclick="submitAddLecturer()"><i class="bi bi-check-lg"></i> Simpan & Aktifkan Akun</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalGenerateCodes">
+  <div class="modal-cbt">
+    <div class="modal-header-cbt"><span><i class="bi bi-key"></i> Buat Kode Akses Massal</span>
+      <button style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;" onclick="closeModal('modalGenerateCodes')">&times;</button></div>
+    <div class="modal-body-cbt">
+      <label class="field-label">Paket Ujian Target *</label>
+      <select id="genCodeExamSelect" class="input-cbt"></select>
+      <div style="height:14px;"></div>
+      <div class="form-grid-2">
+        <div><label class="field-label">Jumlah Kode *</label><input type="number" id="genCodeJumlah" class="input-cbt" value="35"></div>
+        <div><label class="field-label">Awalan Kode (Prefix)</label><input type="text" id="genCodePrefix" class="input-cbt" value="LANG" style="text-transform:uppercase;"></div>
+      </div>
+      <div style="height:14px;"></div>
+      <label class="field-label">Nama Rombel (Opsional)</label>
+      <input type="text" id="genCodeRombel" class="input-cbt" placeholder="Contoh: Rombel A, Batch Pagi, dst.">
+      <div class="field-help">Dipakai untuk mengelompokkan peserta agar bisa dibandingkan performanya di halaman Perbandingan Rombel.</div>
+    </div>
+    <div class="modal-footer-cbt">
+      <button class="btn-cbt btn-cbt-ghost" onclick="closeModal('modalGenerateCodes')">Batal</button>
+      <button class="btn-cbt btn-cbt-primary" onclick="submitGenerateCodes()"><i class="bi bi-database"></i> Konfirmasi & Terbitkan</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalConfirmSubmitExam">
+  <div class="modal-cbt">
+    <div class="modal-header-cbt"><span><i class="bi bi-exclamation-triangle"></i> Konfirmasi Pengiriman Ujian</span></div>
+    <div class="modal-body-cbt">
+      <p>Apakah Anda yakin ingin menyelesaikan ujian sekarang?</p>
+      <div id="submitWarningDetail" style="background:var(--warning-bg);color:var(--warning-text);border-radius:var(--radius-input);padding:12px;font-size:13px;"></div>
+    </div>
+    <div class="modal-footer-cbt">
+      <button class="btn-cbt btn-cbt-ghost" onclick="closeModal('modalConfirmSubmitExam')">Batal / Periksa Kembali</button>
+      <button class="btn-cbt btn-cbt-primary" onclick="doSubmitExam()">Ya, Kirim Sekarang</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalReassignDosen">
+  <div class="modal-cbt">
+    <div class="modal-header-cbt"><span><i class="bi bi-person-gear"></i> Ubah Dosen Pengampu</span>
+      <button style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;" onclick="closeModal('modalReassignDosen')">&times;</button></div>
+    <div class="modal-body-cbt">
+      <p style="font-size:13px;color:var(--text-muted);margin-top:0;" id="reassignExamNameLabel">-</p>
+      <label class="field-label">Pilih Dosen Pengampu Baru</label>
+      <select id="reassignDosenSelect" class="input-cbt">
+        <option value="ADMIN">Dikelola Langsung oleh Admin</option>
+      </select>
+      <div class="field-help">Dosen yang ditugaskan akan mendapat akses penuh untuk mengelola soal & melihat hasil ujian ini.</div>
+    </div>
+    <div class="modal-footer-cbt">
+      <button class="btn-cbt btn-cbt-ghost" onclick="closeModal('modalReassignDosen')">Batal</button>
+      <button class="btn-cbt btn-cbt-primary" onclick="submitReassignDosen()"><i class="bi bi-check-lg"></i> Simpan Penugasan</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalPrintCodes">
+  <div class="modal-cbt">
+    <div class="modal-header-cbt"><span><i class="bi bi-printer"></i> Cetak / Unduh Kode Akses</span>
+      <button style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;" onclick="closeModal('modalPrintCodes')">&times;</button></div>
+    <div class="modal-body-cbt">
+      <label class="field-label">Pilih Ujian</label>
+      <select id="printCodesExamSelect" class="input-cbt">
+        <option value="">Semua Ujian (semua kode akses)</option>
+      </select>
+      <div class="field-help">Kode akses akan disusun sebagai kartu siap cetak/potong, agar bisa langsung dibagikan ke peserta tanpa mengirim satu per satu.</div>
+    </div>
+    <div class="modal-footer-cbt">
+      <button class="btn-cbt btn-cbt-ghost" onclick="closeModal('modalPrintCodes')">Batal</button>
+      <button class="btn-cbt btn-cbt-outline" onclick="downloadAccessCodesCsv()"><i class="bi bi-file-earmark-spreadsheet"></i> Unduh CSV</button>
+      <button class="btn-cbt btn-cbt-primary" onclick="printAccessCodes()"><i class="bi bi-printer"></i> Cetak Kartu Kode</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalQuestionForm">
+  <div class="modal-cbt modal-lg">
+    <div class="modal-header-cbt"><span id="questionFormTitle"><i class="bi bi-pencil-square"></i> Edit Soal</span>
+      <button style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;" onclick="closeModal('modalQuestionForm')">&times;</button></div>
+    <div class="modal-body-cbt">
+      <input type="hidden" id="qfSoalId">
+      <div class="form-grid-2">
+        <div>
+          <label class="field-label">Sesi *</label>
+          <select id="qfSesi" class="input-cbt" onchange="toggleAudioFieldVisibility()">
+            <option value="Listening">Listening</option>
+            <option value="Structure">Structure</option>
+            <option value="Reading">Reading</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label">Poin</label>
+          <input type="number" id="qfPoin" class="input-cbt" value="1" min="1">
+        </div>
+      </div>
+      <div style="height:14px;"></div>
+      <label class="field-label">Pertanyaan *</label>
+      <textarea id="qfPertanyaan" class="input-cbt" rows="2"></textarea>
+      <div style="height:14px;"></div>
+      <label class="field-label">Passage / Teks Bacaan (untuk sesi Reading)</label>
+      <textarea id="qfPassage" class="input-cbt" rows="3"></textarea>
+      <div style="margin-top:14px;" id="qfAudioWrap">
+        <label class="field-label">Link Audio (untuk sesi Listening)</label>
+        <div style="display:flex;gap:8px;margin-top:4px;">
+          <input type="text" id="qfLinkAudio" class="input-cbt" placeholder="https://drive.google.com/...">
+          <input type="file" id="qfAudioFileInput" accept="audio/*" style="display:none;" onchange="handleQfAudioSelected(event)">
+          <button type="button" class="btn-cbt btn-cbt-outline" onclick="document.getElementById('qfAudioFileInput').click()"><i class="bi bi-upload"></i></button>
+        </div>
+        <div id="qfAudioUploadStatus" style="font-size:11.5px;color:var(--text-muted);margin-top:4px;"></div>
+      </div>
+      <div style="height:14px;"></div>
+      <div class="form-grid-2">
+        <div><label class="field-label">Pilihan A *</label><input type="text" id="qfPilihanA" class="input-cbt"></div>
+        <div><label class="field-label">Pilihan B *</label><input type="text" id="qfPilihanB" class="input-cbt"></div>
+        <div><label class="field-label">Pilihan C</label><input type="text" id="qfPilihanC" class="input-cbt"></div>
+        <div><label class="field-label">Pilihan D</label><input type="text" id="qfPilihanD" class="input-cbt"></div>
+      </div>
+      <div style="height:14px;"></div>
+      <label class="field-label">Jawaban Benar *</label>
+      <select id="qfJawabanBenar" class="input-cbt">
+        <option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option>
+      </select>
+    </div>
+    <div class="modal-footer-cbt">
+      <button class="btn-cbt btn-cbt-ghost" onclick="closeModal('modalQuestionForm')">Batal</button>
+      <button class="btn-cbt btn-cbt-primary" onclick="submitQuestionForm()"><i class="bi bi-check-lg"></i> Simpan Soal</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalImportParticipants">
+  <div class="modal-cbt modal-lg">
+    <div class="modal-header-cbt"><span><i class="bi bi-file-earmark-arrow-up"></i> Import Peserta Massal (CSV)</span>
+      <button style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;" onclick="closeModal('modalImportParticipants')">&times;</button></div>
+    <div class="modal-body-cbt">
+      <label class="field-label">Ujian Target *</label>
+      <select id="importPesertaExamSelect" class="input-cbt"></select>
+      <div style="height:14px;"></div>
+      <button type="button" class="btn-cbt btn-cbt-outline" onclick="downloadPesertaCsvTemplate()"><i class="bi bi-download"></i> Unduh Template CSV</button>
+      <div class="field-help">Kolom: <code>Nama, Kontak, Rombel (opsional), Kode_Akses (opsional — dibuat otomatis jika kosong)</code></div>
+      <div style="height:14px;"></div>
+      <div class="dropzone" id="pesertaCsvDropzone" onclick="document.getElementById('pesertaCsvFileInput').click()">
+        <div class="dz-icon"><i class="bi bi-cloud-upload"></i></div>
+        <div style="font-weight:600;">Klik untuk Memilih Berkas CSV Peserta</div>
+        <input type="file" id="pesertaCsvFileInput" accept=".csv" style="display:none;" onchange="handlePesertaCsvSelected(event)">
+      </div>
+      <div id="pesertaCsvFileName" style="text-align:center;margin-top:10px;font-size:13px;color:var(--text-muted);"></div>
+      <div style="text-align:center;margin-top:14px;">
+        <button class="btn-cbt btn-cbt-primary" onclick="validateAndPreviewPesertaCsv()"><i class="bi bi-check2-square"></i> Validasi CSV</button>
+      </div>
+      <div id="pesertaCsvValidationResult" style="margin-top:14px;"></div>
+    </div>
+    <div class="modal-footer-cbt">
+      <button class="btn-cbt btn-cbt-ghost" onclick="closeModal('modalImportParticipants')">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalBankSoalForm">
+  <div class="modal-cbt modal-lg">
+    <div class="modal-header-cbt"><span id="bankSoalFormTitle"><i class="bi bi-plus-circle"></i> Tambah ke Bank Soal</span>
+      <button style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;" onclick="closeModal('modalBankSoalForm')">&times;</button></div>
+    <div class="modal-body-cbt">
+      <input type="hidden" id="bfIdBank">
+      <div class="form-grid-2">
+        <div>
+          <label class="field-label">Sesi *</label>
+          <select id="bfSesi" class="input-cbt" onchange="toggleBankAudioFieldVisibility()">
+            <option value="Listening">Listening</option><option value="Structure">Structure</option><option value="Reading">Reading</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label">Level Kesulitan</label>
+          <select id="bfLevel" class="input-cbt">
+            <option value="Mudah">Mudah</option><option value="Sedang" selected>Sedang</option><option value="Sulit">Sulit</option>
+          </select>
+        </div>
+      </div>
+      <div style="height:14px;"></div>
+      <div class="form-grid-2">
+        <div><label class="field-label">Topik</label><input type="text" id="bfTopik" class="input-cbt" placeholder="Contoh: Tenses, Narrative Text"></div>
+        <div><label class="field-label">Poin</label><input type="number" id="bfPoin" class="input-cbt" value="1" min="1"></div>
+      </div>
+      <div style="height:14px;"></div>
+      <label class="field-label">Pertanyaan *</label>
+      <textarea id="bfPertanyaan" class="input-cbt" rows="2"></textarea>
+      <div style="height:14px;"></div>
+      <label class="field-label">Passage / Teks Bacaan (untuk sesi Reading)</label>
+      <textarea id="bfPassage" class="input-cbt" rows="3"></textarea>
+      <div style="margin-top:14px;" id="bfAudioWrap">
+        <label class="field-label">Link Audio (untuk sesi Listening)</label>
+        <div style="display:flex;gap:8px;margin-top:4px;">
+          <input type="text" id="bfLinkAudio" class="input-cbt" placeholder="https://drive.google.com/...">
+          <input type="file" id="bfAudioFileInput" accept="audio/*" style="display:none;" onchange="handleBfAudioSelected(event)">
+          <button type="button" class="btn-cbt btn-cbt-outline" onclick="document.getElementById('bfAudioFileInput').click()"><i class="bi bi-upload"></i></button>
+        </div>
+        <div id="bfAudioUploadStatus" style="font-size:11.5px;color:var(--text-muted);margin-top:4px;"></div>
+      </div>
+      <div style="height:14px;"></div>
+      <div class="form-grid-2">
+        <div><label class="field-label">Pilihan A *</label><input type="text" id="bfPilihanA" class="input-cbt"></div>
+        <div><label class="field-label">Pilihan B *</label><input type="text" id="bfPilihanB" class="input-cbt"></div>
+        <div><label class="field-label">Pilihan C</label><input type="text" id="bfPilihanC" class="input-cbt"></div>
+        <div><label class="field-label">Pilihan D</label><input type="text" id="bfPilihanD" class="input-cbt"></div>
+      </div>
+      <div style="height:14px;"></div>
+      <label class="field-label">Jawaban Benar *</label>
+      <select id="bfJawabanBenar" class="input-cbt"><option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option></select>
+    </div>
+    <div class="modal-footer-cbt">
+      <button class="btn-cbt btn-cbt-ghost" onclick="closeModal('modalBankSoalForm')">Batal</button>
+      <button class="btn-cbt btn-cbt-primary" onclick="submitBankSoalForm()"><i class="bi bi-check-lg"></i> Simpan ke Bank Soal</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalImportBankCsv">
+  <div class="modal-cbt modal-lg">
+    <div class="modal-header-cbt"><span><i class="bi bi-file-earmark-arrow-up"></i> Import CSV ke Bank Soal</span>
+      <button style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;" onclick="closeModal('modalImportBankCsv')">&times;</button></div>
+    <div class="modal-body-cbt">
+      <div class="field-help" style="margin-bottom:10px;">Kolom: <code>Sesi, Topik, Level_Kesulitan, Pertanyaan, Passage_Teks, Link_Audio, Pilihan_A-D, Jawaban_Benar, Poin</code></div>
+      <div class="dropzone" id="bankCsvDropzone" onclick="document.getElementById('bankCsvFileInput').click()">
+        <div class="dz-icon"><i class="bi bi-cloud-upload"></i></div>
+        <div style="font-weight:600;">Klik untuk Memilih Berkas CSV</div>
+        <input type="file" id="bankCsvFileInput" accept=".csv" style="display:none;" onchange="handleBankCsvSelected(event)">
+      </div>
+      <div id="bankCsvFileName" style="text-align:center;margin-top:10px;font-size:13px;color:var(--text-muted);"></div>
+      <div style="text-align:center;margin-top:14px;">
+        <button class="btn-cbt btn-cbt-primary" onclick="validateAndPreviewBankCsv()"><i class="bi bi-check2-square"></i> Validasi CSV</button>
+      </div>
+      <div id="bankCsvValidationResult" style="margin-top:14px;"></div>
+    </div>
+    <div class="modal-footer-cbt">
+      <button class="btn-cbt btn-cbt-ghost" onclick="closeModal('modalImportBankCsv')">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalPullFromBank">
+  <div class="modal-cbt modal-lg">
+    <div class="modal-header-cbt"><span><i class="bi bi-collection"></i> Ambil Soal dari Bank Soal</span>
+      <button style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;" onclick="closeModal('modalPullFromBank')">&times;</button></div>
+    <div class="modal-body-cbt">
+      <div class="tab-pills">
+        <div class="tab-pill active" id="pullTabRandom" onclick="switchPullTab('random')">Acak Otomatis</div>
+        <div class="tab-pill" id="pullTabManual" onclick="switchPullTab('manual')">Pilih Manual</div>
+      </div>
+
+      <div id="pullRandomPanel">
+        <div class="form-grid-2">
+          <div>
+            <label class="field-label">Sesi</label>
+            <select id="prSesi" class="input-cbt"><option value="">Semua Sesi</option><option value="Listening">Listening</option><option value="Structure">Structure</option><option value="Reading">Reading</option></select>
+          </div>
+          <div>
+            <label class="field-label">Level Kesulitan</label>
+            <select id="prLevel" class="input-cbt"><option value="">Semua Level</option><option value="Mudah">Mudah</option><option value="Sedang">Sedang</option><option value="Sulit">Sulit</option></select>
+          </div>
+        </div>
+        <div style="height:14px;"></div>
+        <div class="form-grid-2">
+          <div>
+            <label class="field-label">Topik</label>
+            <select id="prTopik" class="input-cbt"><option value="">Semua Topik</option></select>
+          </div>
+          <div><label class="field-label">Jumlah Soal Diambil</label><input type="number" id="prJumlah" class="input-cbt" value="10" min="1"></div>
+        </div>
+        <div id="prPoolInfo" style="font-size:12.5px;color:var(--text-muted);margin-top:10px;"></div>
+      </div>
+
+      <div id="pullManualPanel" style="display:none;">
+        <div class="filter-bar">
+          <select id="pmSesiFilter" class="input-cbt" onchange="loadManualBankPicker()"><option value="">Semua Sesi</option><option value="Listening">Listening</option><option value="Structure">Structure</option><option value="Reading">Reading</option></select>
+        </div>
+        <div id="manualBankPickerList" style="max-height:320px;overflow-y:auto;"></div>
+      </div>
+    </div>
+    <div class="modal-footer-cbt">
+      <button class="btn-cbt btn-cbt-ghost" onclick="closeModal('modalPullFromBank')">Batal</button>
+      <button class="btn-cbt btn-cbt-primary" onclick="submitPullFromBank()"><i class="bi bi-check-lg"></i> Tarik ke Ujian Ini</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalGeneric">
+  <div class="modal-cbt" id="modalGenericContent"></div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
