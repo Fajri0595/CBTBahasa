@@ -140,15 +140,10 @@
         document.getElementById('loadingOverlay').classList.add('hide');
       }, 500);
     
-      // Tampilkan versi build aktif — bandingkan dengan versi terbaru yang
-      // diberitahukan untuk memastikan deployment sudah ter-update.
+      // Cek versi build aktif di console internal (tidak ditampilkan di UI agar bersih)
       gasRun.withSuccessHandler(res => {
         if (res && res.success) {
-          const label = 'Build: ' + res.data.version;
-          ['appVersionBadge', 'appVersionBadgeLogin1', 'appVersionBadgeLogin2'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.textContent = label;
-          });
+          console.log('[CBT Bahasa] Server Build Active:', res.data.version);
         }
       }).getAppVersion();
     
