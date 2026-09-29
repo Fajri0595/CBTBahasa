@@ -137,19 +137,45 @@
             <i class="bi bi-list-check"></i> <span data-i18n="btnReviewAll">Tinjau Semua Jawaban</span>
           </button>
         </aside>
-        <div class="exam-main">
+        <div class="exam-main" id="examMainArea">
           <div class="q-topbar">
-            <button class="btn-cbt btn-cbt-ghost" onclick="prevQuestion()"><i class="bi bi-arrow-left"></i> Sebelumnya</button>
-            <div class="q-title">Question <span id="qCurrentNum">1</span> of <span id="qTotalNum">30</span></div>
-            <button class="btn-cbt btn-cbt-ghost" onclick="nextQuestion()">Selanjutnya <i class="bi bi-arrow-right"></i></button>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <button class="btn-cbt btn-cbt-ghost" onclick="prevQuestion()"><i class="bi bi-arrow-left"></i> Sebelumnya</button>
+              <div class="q-title" style="margin-left:4px;">Question <span id="qCurrentNum">1</span> of <span id="qTotalNum">30</span></div>
+            </div>
+            
+            <!-- Aksesibilitas Font & Status Simpan Otomatis -->
+            <div style="display:flex;align-items:center;gap:12px;">
+              <span id="autosaveIndicator" style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:5px;">
+                <i class="bi bi-cloud-check-fill" style="color:var(--success);font-size:14px;"></i> <span>Tersimpan</span>
+              </span>
+              <div class="font-resizer-wrap" title="Ubah Ukuran Huruf / Text Size">
+                <button type="button" class="font-resizer-btn" id="btnFontSm" onclick="setFontScale('sm')">A-</button>
+                <button type="button" class="font-resizer-btn active" id="btnFontMd" onclick="setFontScale('md')">A</button>
+                <button type="button" class="font-resizer-btn" id="btnFontLg" onclick="setFontScale('lg')">A+</button>
+              </div>
+            </div>
+
+            <!-- Tombol Ragu-ragu & Selanjutnya -->
+            <div style="display:flex;align-items:center;gap:10px;">
+              <button type="button" class="btn-cbt" id="btnFlagCurrentQ" onclick="toggleFlagCurrentQuestion()" style="border:1.5px solid var(--accent);color:#B45309;background:var(--warning-bg);">
+                <i class="bi bi-flag" id="flagIcon"></i> <span id="flagBtnText">Ragu-ragu</span>
+              </button>
+              <button class="btn-cbt btn-cbt-ghost" onclick="nextQuestion()">Selanjutnya <i class="bi bi-arrow-right"></i></button>
+            </div>
           </div>
-          <div class="card-cbt">
-            <div id="audioPlayerWrap"></div>
-            <div id="passageWrap"></div>
-            <div id="questionText" style="font-size:16px;font-weight:600;margin-bottom:16px;"></div>
-            <div id="optionsWrap"></div>
-            <div style="text-align:right;margin-top:16px;">
-              <button class="btn-cbt btn-cbt-primary" onclick="nextQuestion()">Simpan &amp; Lanjut <i class="bi bi-arrow-right"></i></button>
+
+          <!-- Dynamic Exam Question & Split Layout Container -->
+          <div id="examQuestionDynamicWrap">
+            <div class="card-cbt" id="standardQuestionCard">
+              <div id="audioPlayerWrap"></div>
+              <div id="passageWrap"></div>
+              <div id="questionText" style="font-weight:600;margin-bottom:16px;"></div>
+              <div id="optionsWrap"></div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding-top:14px;border-top:1px solid var(--border-color);">
+                <span style="font-size:12.5px;color:var(--text-muted);"><i class="bi bi-info-circle"></i> Jawaban tersimpan otomatis saat dipilih.</span>
+                <button class="btn-cbt btn-cbt-primary" onclick="nextQuestion()">Simpan &amp; Lanjut <i class="bi bi-arrow-right"></i></button>
+              </div>
             </div>
           </div>
         </div>
@@ -804,6 +830,76 @@
     <div class="modal-footer-cbt">
       <button class="btn-cbt btn-cbt-ghost" onclick="closeModal('modalPullFromBank')">Batal</button>
       <button class="btn-cbt btn-cbt-primary" onclick="submitPullFromBank()"><i class="bi bi-check-lg"></i> Tarik ke Ujian Ini</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: Sound Check Sebelum Ujian ══ -->
+<div class="modal-overlay" id="modalSoundCheck">
+  <div class="modal-cbt">
+    <div class="modal-header-cbt" style="background:var(--primary);">
+      <span><i class="bi bi-headphones"></i> Uji Coba Audio (Sound Check)</span>
+      <button style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;" onclick="closeSoundCheckModal()">&times;</button>
+    </div>
+    <div class="modal-body-cbt">
+      <p style="font-size:13.5px;color:var(--text-muted);margin-top:0;">
+        Ujian ini mencakup seksi <strong>Listening Comprehension</strong>. Pastikan headset atau speaker Anda berfungsi dengan baik sebelum waktu ujian berjalan.
+      </p>
+
+      <div class="card-cbt" style="background:var(--bg-canvas);margin:16px 0;text-align:center;padding:18px;">
+        <button type="button" class="btn-cbt btn-cbt-teal" id="btnTestSound" onclick="toggleTestAudio()" style="margin:0 auto 10px;">
+          <i class="bi bi-volume-up-fill" id="testSoundIcon"></i> <span id="testSoundBtnLabel">Putar Nada Tes Audio</span>
+        </button>
+        <div style="font-size:12px;color:var(--text-muted);" id="soundTestStatus">Klik tombol di atas untuk memastikan suara terdengar jelas.</div>
+        
+        <div style="margin-top:14px;display:flex;align-items:center;justify-content:center;gap:10px;">
+          <i class="bi bi-volume-down" style="font-size:18px;color:var(--text-muted);"></i>
+          <input type="range" id="soundTestVolume" min="0" max="1" step="0.05" value="0.8" oninput="setTestAudioVolume(this.value)" style="width:180px;accent-color:var(--primary);">
+          <i class="bi bi-volume-up" style="font-size:18px;color:var(--text-muted);"></i>
+        </div>
+      </div>
+
+      <div style="background:var(--primary-light);border-left:4px solid var(--primary);padding:12px;border-radius:var(--radius-input);margin-bottom:14px;font-size:12.5px;color:var(--primary-dark);">
+        <i class="bi bi-shield-lock-fill"></i> <strong>Integritas Ujian:</strong> Setelah menekan tombol konfirmasi, browser akan masuk ke <strong>Mode Layar Penuh (Fullscreen)</strong>. Dilarang berpindah tab atau membuka aplikasi lain.
+      </div>
+
+      <label style="display:flex;align-items:flex-start;gap:10px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="checkSoundReady" onchange="document.getElementById('btnStartConfirmedExam').disabled = !this.checked" style="margin-top:2px;">
+        <span>Saya mengonfirmasi bahwa audio terdengar jelas dan saya siap mematuhi aturan ujian.</span>
+      </label>
+    </div>
+    <div class="modal-footer-cbt">
+      <button class="btn-cbt btn-cbt-ghost" onclick="closeSoundCheckModal()">Batal</button>
+      <button class="btn-cbt btn-cbt-primary" id="btnStartConfirmedExam" disabled onclick="confirmAndLaunchExam()">
+        <i class="bi bi-play-circle-fill"></i> Masuk Ujian &amp; Layar Penuh
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: Peringatan Pelanggaran Integritas (Anti-Cheating) ══ -->
+<div class="modal-overlay" id="modalCheatWarning" style="z-index:99999;">
+  <div class="modal-cbt" style="border:2px solid var(--danger);box-shadow:0 10px 35px rgba(239,68,68,0.25);">
+    <div class="modal-header-cbt" style="background:var(--danger);color:#fff;">
+      <span><i class="bi bi-exclamation-octagon-fill"></i> Peringatan Integritas Ujian</span>
+    </div>
+    <div class="modal-body-cbt" style="text-align:center;padding:24px 20px;">
+      <div style="width:68px;height:68px;border-radius:50%;background:var(--danger-bg);color:var(--danger);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:32px;">
+        <i class="bi bi-shield-exclamation"></i>
+      </div>
+      <div id="cheatWarningBadgeWrap" style="margin-bottom:12px;">
+        <span class="badge-pill badge-danger" id="cheatViolationCountBadge">Pelanggaran 1 dari 3</span>
+      </div>
+      <h3 style="margin:0 0 8px;font-size:18px;color:var(--danger);" id="cheatWarningTitle">Aktivitas Terlarang Terdeteksi!</h3>
+      <p style="font-size:13.5px;color:var(--text-muted);line-height:1.6;margin:0 0 16px;" id="cheatWarningDesc">
+        Sistem mendeteksi Anda beralih tab, meminimalkan jendela ujian, atau keluar dari mode Layar Penuh. Aktivitas ini tercatat permanen di log audit institusi.
+      </p>
+      <div style="background:var(--warning-bg);border:1px solid #FCD34D;border-radius:var(--radius-input);padding:10px 14px;font-size:12px;color:var(--warning-text);text-align:left;margin-bottom:18px;">
+        <i class="bi bi-info-circle-fill"></i> <strong>Perhatian:</strong> Jika pelanggaran mencapai <strong>3 kali</strong>, ujian Anda akan otomatis dikirim dan didiskualifikasi secara sepihak oleh sistem.
+      </div>
+      <button class="btn-cbt btn-cbt-primary" style="width:100%;justify-content:center;padding:12px;background:var(--primary);" onclick="dismissCheatWarningAndRestoreFullscreen()">
+        <i class="bi bi-arrows-fullscreen"></i> Saya Mengerti, Kembali ke Layar Penuh
+      </button>
     </div>
   </div>
 </div>

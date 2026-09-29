@@ -272,18 +272,92 @@
     .q-nav-btn.answered { background: var(--accent); color: #1a1305; border-color: var(--accent); }
     .q-nav-btn.current { background: #fff; color: var(--primary); border-color: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,.35); }
     .q-nav-btn.flagged-empty { border: 2px solid var(--coral); }
+    .q-nav-btn.flagged {
+      background: #F59E0B !important; color: #1a1305 !important; border-color: #D97706 !important;
+      position: relative;
+    }
+    .q-nav-btn.flagged::after {
+      content: '🚩'; font-size: 8px; position: absolute; top: -4px; right: -4px; line-height: 1;
+    }
     
-    .exam-main { flex: 1; padding: 24px 32px; }
-    .q-topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+    .exam-main { flex: 1; padding: 24px 32px; min-width: 0; }
+    .q-topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }
     .q-topbar .q-title { font-family: 'Poppins'; font-weight: 700; font-size: 17px; }
+    
+    /* ── Font Resizer Controls ── */
+    .font-resizer-wrap {
+      display: inline-flex; align-items: center; background: var(--bg-card);
+      border: 1.5px solid var(--border-color); border-radius: var(--radius-btn); overflow: hidden;
+    }
+    .font-resizer-btn {
+      padding: 5px 11px; font-size: 12px; font-weight: 700; border: none; background: transparent;
+      color: var(--text-muted); cursor: pointer; transition: all .15s ease;
+    }
+    .font-resizer-btn:hover { background: var(--primary-light); color: var(--primary); }
+    .font-resizer-btn.active { background: var(--primary); color: #fff; }
+    
+    /* Font scaling variations applied to question text & options */
+    .font-scale-sm #questionText { font-size: 14.5px !important; }
+    .font-scale-sm .option-card { font-size: 13.5px !important; padding: 11px 14px; }
+    .font-scale-sm .passage-box, .font-scale-sm .passage-split-content { font-size: 13px !important; line-height: 1.6 !important; }
+    
+    .font-scale-md #questionText { font-size: 16.5px !important; }
+    .font-scale-md .option-card { font-size: 14.5px !important; }
+    .font-scale-md .passage-box, .font-scale-md .passage-split-content { font-size: 14.5px !important; line-height: 1.75 !important; }
+    
+    .font-scale-lg #questionText { font-size: 19px !important; }
+    .font-scale-lg .option-card { font-size: 16px !important; padding: 16px 18px; }
+    .font-scale-lg .passage-box, .font-scale-lg .passage-split-content { font-size: 16px !important; line-height: 1.85 !important; }
+    
+    /* ── Split-Screen Layout for Reading Passage ── */
+    .exam-split-layout {
+      display: grid; grid-template-columns: 1.15fr 1fr; gap: 20px; align-items: start;
+    }
+    @media (max-width: 960px) {
+      .exam-split-layout { grid-template-columns: 1fr; }
+      .passage-split-panel { max-height: 320px !important; position: static !important; }
+    }
+    .passage-split-panel {
+      background: var(--bg-card); border: 1.5px solid var(--border-color);
+      border-radius: var(--radius-card); padding: 20px; max-height: calc(100vh - 180px);
+      overflow-y: auto; position: sticky; top: 80px; box-shadow: var(--shadow-rest);
+    }
+    .passage-split-header {
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 14px;
+      font-weight: 700; font-size: 13.5px; color: var(--primary);
+    }
+    .passage-split-content {
+      font-size: 14px; line-height: 1.75; color: var(--text-primary);
+    }
+    
+    /* ── Audio Player CBT (Enhanced with Play Count Limit) ── */
     .audio-player-cbt {
-      background: var(--primary); color: #fff; border-radius: var(--radius-card); padding: 14px 18px;
-      display: flex; align-items: center; gap: 14px; margin-bottom: 18px;
+      background: linear-gradient(135deg, var(--primary) 0%, #08433E 100%);
+      color: #fff; border-radius: var(--radius-card); padding: 16px 20px;
+      display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px;
+      box-shadow: 0 4px 14px rgba(15,118,110,0.18);
     }
+    .audio-player-row { display: flex; align-items: center; gap: 14px; }
     .audio-play-btn {
-      width: 40px; height: 40px; border-radius: 50%; background: var(--accent); border: none;
-      color: #1a1305; font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;
+      width: 44px; height: 44px; border-radius: 50%; background: var(--accent); border: none;
+      color: #1a1305; font-size: 18px; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; flex-shrink: 0; box-shadow: 0 4px 10px rgba(245,158,11,0.4);
+      transition: transform .15s ease, background .15s ease;
     }
+    .audio-play-btn:hover:not(:disabled) { transform: scale(1.06); background: var(--accent-hover); }
+    .audio-play-btn:disabled { background: rgba(255,255,255,.2); color: rgba(255,255,255,.5); cursor: not-allowed; box-shadow: none; }
+    .audio-info-title { font-weight: 700; font-size: 13.5px; display: flex; align-items: center; gap: 8px; }
+    .audio-play-badge {
+      display: inline-block; padding: 2px 8px; border-radius: var(--radius-pill);
+      font-size: 11px; font-weight: 700; background: rgba(255,255,255,.2); color: #fff;
+    }
+    .audio-play-badge.depleted { background: var(--danger); color: #fff; }
+    .audio-progress-track {
+      width: 100%; height: 5px; background: rgba(255,255,255,.2); border-radius: 3px; overflow: hidden;
+    }
+    .audio-progress-bar { height: 100%; width: 0%; background: var(--accent); transition: width .15s linear; }
+    
     .passage-box {
       background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: var(--radius-card);
       padding: 16px; max-height: 260px; overflow-y: auto; font-size: 14px; line-height: 1.7; margin-bottom: 18px;

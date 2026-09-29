@@ -18,6 +18,15 @@
       examQuestions: [],         // soal (tanpa jawaban benar)
       currentQuestionIndex: 0,
       answers: {},                // { ID_Soal: 'A' }
+      flaggedQuestions: {},       // { ID_Soal: true } (soal ragu-ragu)
+      audioPlayCounts: {},        // { ID_Soal: count } (frekuensi putar audio)
+      audioMaxPlayLimit: 2,       // batas putar maksimal per audio (standar ujian)
+      cheatViolations: 0,         // hitungan pelanggaran pindah tab / keluar fullscreen
+      maxCheatViolations: 3,      // toleransi maksimal sebelum auto-submit
+      cheatAuditLogs: [],         // log audit pelanggaran peserta
+      fontScale: localStorage.getItem('cbt_font_scale') || 'md', // 'sm', 'md', 'lg'
+      pendingExamIdForLaunch: null,
+      autoSyncInterval: null,
       examStartTimeISO: null,
       timerInterval: null,
       timerSecondsLeft: 0,
@@ -400,7 +409,7 @@
                 </div>
               </div>
               <div style="display:flex;align-items:center;">
-                <button class="btn-cbt ${canStart ? 'btn-cbt-primary' : 'btn-cbt-ghost'}" ${canStart ? '' : 'disabled'} onclick="beginExam('${u.ID_Ujian}')">
+                <button class="btn-cbt ${canStart ? 'btn-cbt-primary' : 'btn-cbt-ghost'}" ${canStart ? '' : 'disabled'} onclick="prepareLaunchExam('${u.ID_Ujian}')">
                   ${canStart ? '<i class="bi bi-play-fill"></i> Mulai Ujian' : 'Belum Tersedia'}
                 </button>
               </div>
@@ -410,12 +419,16 @@
     }
     
     // ════════════════════════════════════════════════════════
-    // PESERTA — SESI UJIAN
+    // PESERTA — SESI UJIAN & STANDAR KEBAHASAAN
     // ════════════════════════════════════════════════════════
     // Kunci localStorage untuk auto-save progres ujian (namespaced per ujian
     // agar tidak bentrok jika peserta pernah mengerjakan >1 ujian di browser yang sama).
     function getDraftAnswersKey(idUjian) { return `cbt_draft_answers_${idUjian}`; }
     function getQIndexKey(idUjian) { return `cbt_current_qindex_${idUjian}`; }
+    function getFlaggedKey(idUjian) { return `cbt_flagged_${idUjian}`; }
+    function getAudioKey(idUjian) { return `cbt_audio_plays_${idUjian}`; }
+    function getCheatKey(idUjian) { return `cbt_cheat_count_${idUjian}`; }
+    function getCheatLogsKey(idUjian) { return `cbt_cheat_logs_${idUjian}`; }
     
     function clearActiveExamStorage(idUjian) {
       localStorage.removeItem('cbt_active_exam_id');
@@ -423,6 +436,123 @@
       if (idUjian) {
         localStorage.removeItem(getDraftAnswersKey(idUjian));
         localStorage.removeItem(getQIndexKey(idUjian));
+        localStorage.removeItem(getFlaggedKey(idUjian));
+        localStorage.removeItem(getAudioKey(idUjian));
+        localStorage.removeItem(getCheatKey(idUjian));
+        localStorage.removeItem(getCheatLogsKey(idUjian));
+      }
+      if (appState.autoSyncInterval) {
+        clearInterval(appState.autoSyncInterval);
+        appState.autoSyncInterval = null;
+      }
+    }
+    
+    // ── Sound Check (Uji Coba Headset Sebelum Ujian) ──
+    let _testAudioCtx = null;
+    let _testOscillator = null;
+    let _testGainNode = null;
+    let _isTestAudioPlaying = false;
+    
+    function prepareLaunchExam(idUjian) {
+      appState.pendingExamIdForLaunch = idUjian;
+      const readyCheck = document.getElementById('checkSoundReady');
+      if (readyCheck) readyCheck.checked = false;
+      const startBtn = document.getElementById('btnStartConfirmedExam');
+      if (startBtn) startBtn.disabled = true;
+      openModal('modalSoundCheck');
+    }
+    
+    function toggleTestAudio() {
+      if (_isTestAudioPlaying) {
+        stopTestAudio();
+      } else {
+        startTestAudio();
+      }
+    }
+    
+    function startTestAudio() {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!_testAudioCtx) _testAudioCtx = new AudioContext();
+        if (_testAudioCtx.state === 'suspended') _testAudioCtx.resume();
+        
+        _testOscillator = _testAudioCtx.createOscillator();
+        _testGainNode = _testAudioCtx.createGain();
+        
+        const volSlider = document.getElementById('soundTestVolume');
+        const vol = volSlider ? parseFloat(volSlider.value) : 0.8;
+        _testGainNode.gain.setValueAtTime(vol * 0.15, _testAudioCtx.currentTime);
+        
+        // Buat nada chime lembut (440Hz / A4 ke 554.37Hz / C#5)
+        _testOscillator.type = 'sine';
+        _testOscillator.frequency.setValueAtTime(440, _testAudioCtx.currentTime);
+        _testOscillator.frequency.exponentialRampToValueAtTime(554.37, _testAudioCtx.currentTime + 0.35);
+        _testOscillator.frequency.exponentialRampToValueAtTime(659.25, _testAudioCtx.currentTime + 0.7);
+        
+        _testOscillator.connect(_testGainNode);
+        _testGainNode.connect(_testAudioCtx.destination);
+        _testOscillator.start();
+        
+        _isTestAudioPlaying = true;
+        const btn = document.getElementById('btnTestSound');
+        const icon = document.getElementById('testSoundIcon');
+        const lbl = document.getElementById('testSoundBtnLabel');
+        const status = document.getElementById('soundTestStatus');
+        if (btn) btn.className = 'btn-cbt btn-cbt-outline';
+        if (icon) icon.className = 'bi bi-stop-fill';
+        if (lbl) lbl.textContent = 'Hentikan Nada Tes';
+        if (status) status.innerHTML = '<span style="color:var(--success);font-weight:600;"><i class="bi bi-soundwave"></i> Nada tes sedang diputar...</span> Atur volume hingga terdengar nyaman.';
+        
+        _testOscillator.onended = () => stopTestAudio();
+      } catch (err) {
+        console.warn('Audio Context tidak diizinkan atau tidak didukung:', err);
+        showToast('Info Audio', 'Pastikan speaker/headset menyala.', 'info');
+      }
+    }
+    
+    function stopTestAudio() {
+      if (_testOscillator) {
+        try { _testOscillator.stop(); } catch(e){}
+        _testOscillator = null;
+      }
+      _isTestAudioPlaying = false;
+      const btn = document.getElementById('btnTestSound');
+      const icon = document.getElementById('testSoundIcon');
+      const lbl = document.getElementById('testSoundBtnLabel');
+      const status = document.getElementById('soundTestStatus');
+      if (btn) btn.className = 'btn-cbt btn-cbt-teal';
+      if (icon) icon.className = 'bi bi-volume-up-fill';
+      if (lbl) lbl.textContent = 'Putar Nada Tes Audio';
+      if (status) status.textContent = 'Klik tombol di atas untuk memastikan suara terdengar jelas.';
+    }
+    
+    function setTestAudioVolume(val) {
+      if (_testGainNode && _testAudioCtx) {
+        _testGainNode.gain.setValueAtTime(parseFloat(val) * 0.15, _testAudioCtx.currentTime);
+      }
+    }
+    
+    function closeSoundCheckModal() {
+      stopTestAudio();
+      closeModal('modalSoundCheck');
+      appState.pendingExamIdForLaunch = null;
+    }
+    
+    function confirmAndLaunchExam() {
+      stopTestAudio();
+      closeModal('modalSoundCheck');
+      const idUjian = appState.pendingExamIdForLaunch;
+      appState.pendingExamIdForLaunch = null;
+      
+      // Minta masuk ke Fullscreen Mode demi integritas ujian
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.warn('[CBT Security] Fullscreen request rejected:', err);
+        });
+      }
+      
+      if (idUjian) {
+        beginExam(idUjian);
       }
     }
     
@@ -447,6 +577,16 @@
           appState.answers = savedAnswers ? JSON.parse(savedAnswers) : {};
           const savedIndex = localStorage.getItem(getQIndexKey(idUjian));
           appState.currentQuestionIndex = savedIndex ? Number(savedIndex) : 0;
+          
+          // Pulihkan status ragu-ragu, kuota putar audio, dan pelanggaran
+          const savedFlagged = localStorage.getItem(getFlaggedKey(idUjian));
+          appState.flaggedQuestions = savedFlagged ? JSON.parse(savedFlagged) : {};
+          const savedAudio = localStorage.getItem(getAudioKey(idUjian));
+          appState.audioPlayCounts = savedAudio ? JSON.parse(savedAudio) : {};
+          const savedCheat = localStorage.getItem(getCheatKey(idUjian));
+          appState.cheatViolations = savedCheat ? Number(savedCheat) : 0;
+          const savedLogs = localStorage.getItem(getCheatLogsKey(idUjian));
+          appState.cheatAuditLogs = savedLogs ? JSON.parse(savedLogs) : [];
     
           // Sisa waktu dihitung dari waktu mulai OTORITATIF milik server (bukan
           // direset ke durasi penuh) — refresh halaman tidak akan menambah waktu.
@@ -461,9 +601,13 @@
     
           document.getElementById('examSessionTitle').textContent = res.data.ujian.Nama_Ujian;
           document.getElementById('qNavGrid').innerHTML = appState.examQuestions.map((q, i) =>
-            `<div class="q-nav-btn" id="qnav-${i}" onclick="jumpToQuestion(${i})">${i + 1}</div>`).join('');
+            `<div class="q-nav-btn ${appState.flaggedQuestions[q.ID_Soal] ? 'flagged' : ''}" id="qnav-${i}" onclick="jumpToQuestion(${i})">${i + 1}</div>`).join('');
           document.getElementById('totalQCount').textContent = appState.examQuestions.length;
           document.getElementById('qTotalNum').textContent = appState.examQuestions.length;
+          
+          // Terapkan ukuran font yang dipilih
+          applyFontScale(appState.fontScale);
+          startAutoSaveHeartbeat(idUjian);
     
           if (res.data.isResumed && Object.keys(appState.answers).length > 0) {
             showToast('Sesi Dipulihkan', 'Progres jawaban ujian Anda sebelumnya berhasil dipulihkan.', 'success');
@@ -509,38 +653,240 @@
     }
     
     // ════════════════════════════════════════════════════════
-    // PROTEKSI ANTI COPY-PASTE SELAMA UJIAN BERLANGSUNG
+    // AUTO-SAVE HEARTBEAT & KETAHANAN KONEKSI (RESILIENCE)
+    // ════════════════════════════════════════════════════════
+    function startAutoSaveHeartbeat(idUjian) {
+      if (appState.autoSyncInterval) clearInterval(appState.autoSyncInterval);
+      appState.autoSyncInterval = setInterval(() => {
+        if (!appState.currentExam || appState.currentExam.ID_Ujian !== idUjian) return;
+        try {
+          localStorage.setItem(getDraftAnswersKey(idUjian), JSON.stringify(appState.answers));
+          localStorage.setItem(getFlaggedKey(idUjian), JSON.stringify(appState.flaggedQuestions));
+          localStorage.setItem(getAudioKey(idUjian), JSON.stringify(appState.audioPlayCounts));
+          
+          const indicator = document.getElementById('autosaveIndicator');
+          if (indicator) {
+            indicator.innerHTML = `<i class="bi bi-cloud-check-fill" style="color:var(--success);font-size:14px;"></i> <span>Tersimpan (${new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})})</span>`;
+          }
+        } catch (e) {
+          console.warn('[AutoSave] Gagal menyimpan ke localStorage:', e);
+        }
+      }, 20000); // Sinkronisasi setiap 20 detik
+    }
+
+    // ════════════════════════════════════════════════════════
+    // AKSESIBILITAS: PENGATUR UKURAN FONT (A- / A / A+)
+    // ════════════════════════════════════════════════════════
+    function setFontScale(scale) {
+      appState.fontScale = scale;
+      localStorage.setItem('cbt_font_scale', scale);
+      applyFontScale(scale);
+    }
+    
+    function applyFontScale(scale) {
+      const area = document.getElementById('examMainArea');
+      if (area) {
+        area.classList.remove('font-scale-sm', 'font-scale-md', 'font-scale-lg');
+        area.classList.add(`font-scale-${scale}`);
+      }
+      ['btnFontSm', 'btnFontMd', 'btnFontLg'].forEach(btnId => {
+        const btn = document.getElementById(btnId);
+        if (btn) btn.classList.remove('active');
+      });
+      const activeBtnId = scale === 'sm' ? 'btnFontSm' : scale === 'lg' ? 'btnFontLg' : 'btnFontMd';
+      const activeBtn = document.getElementById(activeBtnId);
+      if (activeBtn) activeBtn.classList.add('active');
+    }
+
+    // ════════════════════════════════════════════════════════
+    // PROTEKSI INTEGRITAS & ANTI-CURANG (FULLSCREEN & TAB-SWITCH)
     // ════════════════════════════════════════════════════════
     let _examProtectionHandlers = null;
+    window._isSubmittingExam = false;
+    
     function enableExamProtection() {
       if (_examProtectionHandlers) return; // sudah aktif, jangan pasang dobel
+      
       const blockEvent = e => {
         e.preventDefault();
-        showToast('Dinonaktifkan', 'Aksi ini dinonaktifkan selama ujian berlangsung.', 'warning');
+        showToast('Dinonaktifkan', 'Aksi copy/paste/klik kanan dinonaktifkan demi integritas ujian.', 'warning');
       };
+      
       const blockShortcuts = e => {
         const key = (e.key || '').toLowerCase();
         const isCtrlCmd = e.ctrlKey || e.metaKey;
-        if (isCtrlCmd && ['c', 'x', 'u', 's', 'p', 'a'].includes(key)) {
+        // Blokir shortcut salin, cetak, simpan, inspect, reload
+        if ((isCtrlCmd && ['c', 'x', 'u', 's', 'p', 'a', 'v', 'r'].includes(key)) || key === 'f12') {
           e.preventDefault();
           showToast('Dinonaktifkan', 'Pintasan keyboard ini dinonaktifkan selama ujian berlangsung.', 'warning');
         }
       };
+      
+      // Deteksi keluar dari Fullscreen
+      const handleFullscreenChange = () => {
+        if (!document.fullscreenElement && !window._isSubmittingExam && appState.currentExam) {
+          triggerCheatViolation('Keluar dari Mode Layar Penuh (Fullscreen)');
+        }
+      };
+      
+      // Deteksi beralih tab browser atau meminimalkan window
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'hidden' && !window._isSubmittingExam && appState.currentExam) {
+          triggerCheatViolation('Pindah Tab Browser atau Meminimalkan Jendela Ujian');
+        }
+      };
+      
       document.addEventListener('copy', blockEvent);
       document.addEventListener('cut', blockEvent);
       document.addEventListener('contextmenu', blockEvent);
       document.addEventListener('keydown', blockShortcuts);
-      _examProtectionHandlers = { blockEvent, blockShortcuts };
+      document.addEventListener('fullscreenchange', handleFullscreenChange);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      
+      _examProtectionHandlers = { blockEvent, blockShortcuts, handleFullscreenChange, handleVisibilityChange };
     }
+    
     function disableExamProtection() {
       if (!_examProtectionHandlers) return;
       document.removeEventListener('copy', _examProtectionHandlers.blockEvent);
       document.removeEventListener('cut', _examProtectionHandlers.blockEvent);
       document.removeEventListener('contextmenu', _examProtectionHandlers.blockEvent);
       document.removeEventListener('keydown', _examProtectionHandlers.blockShortcuts);
+      document.removeEventListener('fullscreenchange', _examProtectionHandlers.handleFullscreenChange);
+      document.removeEventListener('visibilitychange', _examProtectionHandlers.handleVisibilityChange);
       _examProtectionHandlers = null;
     }
     
+    function triggerCheatViolation(reason) {
+      if (!appState.currentExam || window._isSubmittingExam) return;
+      
+      appState.cheatViolations = (appState.cheatViolations || 0) + 1;
+      const incident = {
+        time: new Date().toLocaleTimeString('id-ID'),
+        reason: reason,
+        count: appState.cheatViolations
+      };
+      appState.cheatAuditLogs.push(incident);
+      
+      if (appState.currentExam) {
+        localStorage.setItem(getCheatKey(appState.currentExam.ID_Ujian), appState.cheatViolations);
+        localStorage.setItem(getCheatLogsKey(appState.currentExam.ID_Ujian), JSON.stringify(appState.cheatAuditLogs));
+      }
+      
+      const badge = document.getElementById('cheatViolationCountBadge');
+      if (badge) badge.textContent = `Pelanggaran ${appState.cheatViolations} dari ${appState.maxCheatViolations}`;
+      
+      const desc = document.getElementById('cheatWarningDesc');
+      if (desc) {
+        desc.innerHTML = `Sistem mendeteksi aktivitas mencurigakan: <strong>${reason}</strong> pada pukul ${incident.time}. Aktivitas ini telah dicatat dalam log audit pengawas institusi.`;
+      }
+      
+      if (appState.cheatViolations >= appState.maxCheatViolations) {
+        forceAutoSubmitCheating();
+      } else {
+        openModal('modalCheatWarning');
+      }
+    }
+    
+    function dismissCheatWarningAndRestoreFullscreen() {
+      closeModal('modalCheatWarning');
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    }
+    
+    function forceAutoSubmitCheating() {
+      closeModal('modalCheatWarning');
+      window._isSubmittingExam = true;
+      showToast('Diskualifikasi Keamanan', 'Batas maksimal toleransi pelanggaran terlampaui. Ujian diselesaikan otomatis oleh sistem.', 'danger');
+      doSubmitExam();
+    }
+
+    // ════════════════════════════════════════════════════════
+    // FITUR RAGU-RAGU (FLAG QUESTION)
+    // ════════════════════════════════════════════════════════
+    function toggleFlagCurrentQuestion() {
+      const q = appState.examQuestions[appState.currentQuestionIndex];
+      if (!q) return;
+      
+      if (appState.flaggedQuestions[q.ID_Soal]) {
+        delete appState.flaggedQuestions[q.ID_Soal];
+      } else {
+        appState.flaggedQuestions[q.ID_Soal] = true;
+      }
+      
+      if (appState.currentExam) {
+        localStorage.setItem(getFlaggedKey(appState.currentExam.ID_Ujian), JSON.stringify(appState.flaggedQuestions));
+      }
+      
+      updateFlagButton(q.ID_Soal);
+      updateQNavGrid();
+    }
+    
+    function updateFlagButton(idSoal) {
+      const btn = document.getElementById('btnFlagCurrentQ');
+      const icon = document.getElementById('flagIcon');
+      const txt = document.getElementById('flagBtnText');
+      if (!btn) return;
+      
+      const isFlagged = !!appState.flaggedQuestions[idSoal];
+      if (isFlagged) {
+        btn.style.background = '#F59E0B';
+        btn.style.color = '#fff';
+        btn.style.borderColor = '#D97706';
+        if (icon) icon.className = 'bi bi-flag-fill';
+        if (txt) txt.textContent = 'Ditandai Ragu';
+      } else {
+        btn.style.background = 'var(--warning-bg)';
+        btn.style.color = '#B45309';
+        btn.style.borderColor = 'var(--accent)';
+        if (icon) icon.className = 'bi bi-flag';
+        if (txt) txt.textContent = 'Ragu-ragu';
+      }
+    }
+
+    // ════════════════════════════════════════════════════════
+    // AUDIO LISTENING — PLAY COUNT RESTRICTION
+    // ════════════════════════════════════════════════════════
+    function toggleQuestionAudio(idSoal, audioSrc) {
+      const audioEl = document.getElementById(`audio-elem-${idSoal}`);
+      const playBtn = document.getElementById(`audio-play-btn-${idSoal}`);
+      const icon = document.getElementById(`audio-icon-${idSoal}`);
+      const progressBar = document.getElementById(`audio-progress-bar-${idSoal}`);
+      const badge = document.getElementById(`audio-badge-${idSoal}`);
+      
+      if (!audioEl) return;
+      
+      const currentPlays = appState.audioPlayCounts[idSoal] || 0;
+      const maxPlays = appState.audioMaxPlayLimit || 2;
+      
+      if (audioEl.paused) {
+        if (currentPlays >= maxPlays) {
+          showToast('Batas Putar Habis', `Audio listening ini telah mencapai batas putar maksimal (${maxPlays} kali) sesuai regulasi ujian.`, 'warning');
+          return;
+        }
+        
+        // Putar audio dan tambahkan hitungan
+        audioEl.play().then(() => {
+          appState.audioPlayCounts[idSoal] = currentPlays + 1;
+          if (appState.currentExam) {
+            localStorage.setItem(getAudioKey(appState.currentExam.ID_Ujian), JSON.stringify(appState.audioPlayCounts));
+          }
+          if (icon) icon.className = 'bi bi-pause-fill';
+          if (badge) {
+            badge.textContent = `Diputar: ${appState.audioPlayCounts[idSoal]} / ${maxPlays} kali`;
+            if (appState.audioPlayCounts[idSoal] >= maxPlays) badge.classList.add('depleted');
+          }
+        }).catch(err => {
+          console.warn('Gagal memutar audio:', err);
+          showToast('Audio Error', 'Gagal memutar file audio. Periksa izin pemutaran media browser Anda.', 'danger');
+        });
+      } else {
+        audioEl.pause();
+        if (icon) icon.className = 'bi bi-play-fill';
+      }
+    }
+
     const SESI_ICON = { Listening: 'bi-headphones', 'Grammar-Structure': 'bi-pencil-square', Grammar: 'bi-pencil-square', Structure: 'bi-pencil-square', Reading: 'bi-book' };
     const SESI_LABEL = { Listening: 'Section 1: Listening', 'Grammar-Structure': 'Section 2: Structure', Grammar: 'Section 2: Structure', Structure: 'Section 2: Structure', Reading: 'Section 3: Reading' };
     
@@ -554,36 +900,55 @@
       const q = appState.examQuestions[index];
       if (!q) return;
       appState.currentQuestionIndex = index;
+      
       // Simpan posisi soal terakhir agar bisa dipulihkan tepat jika halaman di-refresh
       if (appState.currentExam) localStorage.setItem(getQIndexKey(appState.currentExam.ID_Ujian), index);
       document.getElementById('qCurrentNum').textContent = index + 1;
       document.getElementById('currentSectionBadge').innerHTML = `<i class="bi ${SESI_ICON[q.Sesi] || 'bi-file-text'}"></i> ${SESI_LABEL[q.Sesi] || q.Sesi}`;
-    
-      const audioWrap = document.getElementById('audioPlayerWrap');
-      audioWrap.innerHTML = q.Link_Audio ? `
-        <div class="audio-player-cbt">
-          <button class="audio-play-btn" onclick="this.nextElementSibling.paused ? this.nextElementSibling.play() : this.nextElementSibling.pause()"><i class="bi bi-play-fill"></i></button>
-          <audio src="${q.Link_Audio}" style="display:none;"></audio>
-          <div style="flex:1;"><div style="font-weight:700;font-size:13px;">Listening Audio Prompt</div><div style="font-size:11.5px;opacity:.8;">Putar audio sebelum menjawab</div></div>
-        </div>` : '';
-    
-      const passageWrap = document.getElementById('passageWrap');
-      if (q.Passage_Teks) {
-        const passageRtl = isArabicText(q.Passage_Teks);
-        passageWrap.innerHTML = `<div class="passage-box" ${passageRtl ? 'dir="rtl" style="text-align:right;"' : ''}>${q.Passage_Teks}</div>`;
-      } else {
-        passageWrap.innerHTML = '';
-      }
-    
-      const questionEl = document.getElementById('questionText');
-      questionEl.textContent = q.Pertanyaan;
+      
+      applyFontScale(appState.fontScale);
+      updateFlagButton(q.ID_Soal);
+      
+      const dynamicWrap = document.getElementById('examQuestionDynamicWrap');
+      const hasPassage = !!q.Passage_Teks;
+      const passageRtl = isArabicText(q.Passage_Teks);
       const questionRtl = isArabicText(q.Pertanyaan);
-      questionEl.setAttribute('dir', questionRtl ? 'rtl' : 'ltr');
-      questionEl.style.textAlign = questionRtl ? 'right' : 'left';
-    
-      const opts = ['A','B','C','D'];
       const selected = appState.answers[q.ID_Soal];
-      document.getElementById('optionsWrap').innerHTML = opts.map(letter => {
+      const opts = ['A','B','C','D'];
+      
+      // Audio Player HTML dengan Batasan Putar
+      const playCount = appState.audioPlayCounts[q.ID_Soal] || 0;
+      const maxPlays = appState.audioMaxPlayLimit || 2;
+      const isDepleted = playCount >= maxPlays;
+      
+      const audioHtml = q.Link_Audio ? `
+        <div class="audio-player-cbt">
+          <div class="audio-player-row">
+            <button type="button" class="audio-play-btn" id="audio-play-btn-${q.ID_Soal}" ${isDepleted ? 'disabled' : ''} onclick="toggleQuestionAudio('${q.ID_Soal}', '${q.Link_Audio}')">
+              <i class="bi ${isDepleted ? 'bi-slash-circle' : 'bi-play-fill'}" id="audio-icon-${q.ID_Soal}"></i>
+            </button>
+            <audio id="audio-elem-${q.ID_Soal}" src="${q.Link_Audio}" style="display:none;" 
+              ontimeupdate="const bar = document.getElementById('audio-progress-bar-${q.ID_Soal}'); if (bar && this.duration) bar.style.width = ((this.currentTime / this.duration) * 100) + '%';"
+              onended="const icon = document.getElementById('audio-icon-${q.ID_Soal}'); if (icon) icon.className = 'bi bi-play-fill'; if (${playCount + 1} >= ${maxPlays}) { const btn = document.getElementById('audio-play-btn-${q.ID_Soal}'); if (btn) { btn.disabled = true; icon.className = 'bi bi-slash-circle'; } }">
+            </audio>
+            <div style="flex:1;">
+              <div class="audio-info-title">
+                <span>Listening Audio Prompt</span>
+                <span class="audio-play-badge ${isDepleted ? 'depleted' : ''}" id="audio-badge-${q.ID_Soal}">
+                  ${isDepleted ? `Batas Putar Habis (${maxPlays}/${maxPlays})` : `Diputar: ${playCount} / ${maxPlays} kali`}
+                </span>
+              </div>
+              <div style="font-size:11.5px;opacity:.85;margin-top:2px;">
+                ${isDepleted ? 'Audio tidak dapat diputar ulang lagi sesuai regulasi ujian.' : 'Putar rekaman untuk menjawab soal berikut.'}
+              </div>
+            </div>
+          </div>
+          <div class="audio-progress-track">
+            <div class="audio-progress-bar" id="audio-progress-bar-${q.ID_Soal}"></div>
+          </div>
+        </div>` : '';
+      
+      const optionsHtml = opts.map(letter => {
         const text = q['Pilihan_' + letter];
         if (!text) return '';
         const optionRtl = isArabicText(text);
@@ -591,7 +956,50 @@
           <div class="opt-letter">${letter}</div><div ${optionRtl ? 'dir="rtl" style="text-align:right;flex:1;"' : ''}>${text}</div>
         </div>`;
       }).join('');
-    
+      
+      if (hasPassage) {
+        // TAMPILAN SPLIT-SCREEN (Teks Bacaan di Kiri, Soal di Kanan)
+        dynamicWrap.innerHTML = `
+          <div class="exam-split-layout">
+            <aside class="passage-split-panel">
+              <div class="passage-split-header">
+                <span><i class="bi bi-book-half"></i> Reading Passage / Teks Bacaan</span>
+                <span style="font-size:11.5px;color:var(--text-muted);font-weight:normal;">Seksi ${q.Sesi}</span>
+              </div>
+              <div class="passage-split-content" ${passageRtl ? 'dir="rtl" style="text-align:right;"' : ''}>
+                ${q.Passage_Teks}
+              </div>
+            </aside>
+            <div class="card-cbt">
+              ${audioHtml}
+              <div id="questionText" style="font-weight:600;margin-bottom:16px;" ${questionRtl ? 'dir="rtl" style="text-align:right;"' : ''}>
+                ${q.Pertanyaan}
+              </div>
+              <div id="optionsWrap">${optionsHtml}</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding-top:14px;border-top:1px solid var(--border-color);">
+                <span style="font-size:12.5px;color:var(--text-muted);"><i class="bi bi-info-circle"></i> Jawaban tersimpan otomatis.</span>
+                <button class="btn-cbt btn-cbt-primary" onclick="nextQuestion()">Simpan &amp; Lanjut <i class="bi bi-arrow-right"></i></button>
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        // TAMPILAN STANDAR (Single Card)
+        dynamicWrap.innerHTML = `
+          <div class="card-cbt" id="standardQuestionCard">
+            ${audioHtml}
+            <div id="questionText" style="font-weight:600;margin-bottom:16px;" ${questionRtl ? 'dir="rtl" style="text-align:right;"' : ''}>
+              ${q.Pertanyaan}
+            </div>
+            <div id="optionsWrap">${optionsHtml}</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding-top:14px;border-top:1px solid var(--border-color);">
+              <span style="font-size:12.5px;color:var(--text-muted);"><i class="bi bi-info-circle"></i> Jawaban tersimpan otomatis.</span>
+              <button class="btn-cbt btn-cbt-primary" onclick="nextQuestion()">Simpan &amp; Lanjut <i class="bi bi-arrow-right"></i></button>
+            </div>
+          </div>
+        `;
+      }
+      
       updateQNavGrid();
     }
     
@@ -606,6 +1014,7 @@
         const el = document.getElementById('qnav-' + i);
         if (!el) return;
         el.classList.toggle('answered', !!appState.answers[q.ID_Soal]);
+        el.classList.toggle('flagged', !!appState.flaggedQuestions[q.ID_Soal]);
         el.classList.toggle('current', i === appState.currentQuestionIndex);
       });
       document.getElementById('answeredCount').textContent = Object.keys(appState.answers).length;
@@ -624,19 +1033,37 @@
         if (!bySesi[q.Sesi]) bySesi[q.Sesi] = [];
         bySesi[q.Sesi].push({ q, i });
       });
-    
+      
+      const totalAnswered = Object.keys(appState.answers).length;
+      const totalFlagged = Object.keys(appState.flaggedQuestions).filter(k => appState.flaggedQuestions[k]).length;
+      const totalQuestions = appState.examQuestions.length;
+      const totalUnanswered = totalQuestions - totalAnswered;
+      
       const tabsWrap = document.getElementById('reviewTabsWrap');
       tabsWrap.innerHTML = Object.keys(bySesi).map((sesi, idx) => {
         const total = bySesi[sesi].length;
         const answered = bySesi[sesi].filter(x => appState.answers[x.q.ID_Soal]).length;
         return `<div class="tab-pill ${idx === 0 ? 'active' : ''}" onclick="renderReviewGrid('${sesi}', this)">${SESI_LABEL[sesi] || sesi} ${answered}/${total}</div>`;
       }).join('');
-    
-      const totalUnanswered = appState.examQuestions.filter(q => !appState.answers[q.ID_Soal]).length;
-      document.getElementById('reviewWarningBox').innerHTML = totalUnanswered > 0
-        ? `<div style="background:var(--warning-bg);color:var(--warning-text);padding:14px;border-radius:var(--radius-card);margin-bottom:14px;font-size:13.5px;">
-            <i class="bi bi-exclamation-triangle-fill"></i> <strong>Perhatian:</strong> Anda memiliki ${totalUnanswered} soal yang belum terjawab. Jawaban kosong bernilai 0 poin.
-           </div>` : `<div style="background:var(--success-bg);color:var(--success-text);padding:14px;border-radius:var(--radius-card);margin-bottom:14px;font-size:13.5px;"><i class="bi bi-check-circle-fill"></i> Seluruh soal telah terjawab.</div>`;
+      
+      // Panel Ringkasan Status Jawaban (Terjawab, Ragu-ragu, Kosong)
+      document.getElementById('reviewWarningBox').innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:12px;margin-bottom:16px;">
+          <div class="card-cbt" style="padding:14px;border-left:4px solid var(--primary);background:var(--bg-card);">
+            <div style="font-size:11.5px;color:var(--text-muted);font-weight:600;">TERJAWAB</div>
+            <div style="font-size:22px;font-weight:700;color:var(--primary);margin-top:2px;">${totalAnswered} <span style="font-size:13px;color:var(--text-muted);font-weight:normal;">/ ${totalQuestions}</span></div>
+          </div>
+          <div class="card-cbt" style="padding:14px;border-left:4px solid #F59E0B;background:var(--bg-card);">
+            <div style="font-size:11.5px;color:var(--text-muted);font-weight:600;">RAGU-RAGU</div>
+            <div style="font-size:22px;font-weight:700;color:#D97706;margin-top:2px;">${totalFlagged} <span style="font-size:13px;color:var(--text-muted);font-weight:normal;">soal</span></div>
+          </div>
+          <div class="card-cbt" style="padding:14px;border-left:4px solid ${totalUnanswered > 0 ? 'var(--danger)' : 'var(--success)'};background:var(--bg-card);">
+            <div style="font-size:11.5px;color:var(--text-muted);font-weight:600;">BELUM DIJAWAB</div>
+            <div style="font-size:22px;font-weight:700;color:${totalUnanswered > 0 ? 'var(--danger)' : 'var(--success)'};margin-top:2px;">${totalUnanswered} <span style="font-size:13px;color:var(--text-muted);font-weight:normal;">soal</span></div>
+          </div>
+        </div>
+        ${totalUnanswered > 0 ? `<div style="background:var(--warning-bg);color:var(--warning-text);padding:12px 16px;border-radius:var(--radius-input);margin-bottom:14px;font-size:13px;"><i class="bi bi-exclamation-triangle-fill"></i> Terdapat <strong>${totalUnanswered} soal kosong</strong>. Pastikan Anda memeriksa kembali sebelum menekan submit final.</div>` : ''}
+      `;
     
       window._reviewBySesi = bySesi;
       const firstSesi = Object.keys(bySesi)[0];
@@ -646,11 +1073,28 @@
     
     function renderReviewGrid(sesi, el) {
       if (el) { document.querySelectorAll('#reviewTabsWrap .tab-pill').forEach(t => t.classList.remove('active')); el.classList.add('active'); }
-      const items = window._reviewBySesi[sesi];
-      document.getElementById('reviewGridWrap').innerHTML = `<div class="q-nav-grid" style="grid-template-columns:repeat(10,1fr);">` +
+      const items = window._reviewBySesi[sesi] || [];
+      document.getElementById('reviewGridWrap').innerHTML = `<div class="q-nav-grid" style="grid-template-columns:repeat(auto-fill, minmax(60px, 1fr));gap:8px;">` +
         items.map(x => {
           const answered = !!appState.answers[x.q.ID_Soal];
-          return `<div class="q-nav-btn" style="border-radius:8px;${answered ? 'background:var(--primary);border-color:var(--primary);color:#fff;' : 'border:2px solid var(--coral);color:var(--coral);background:transparent;'}" onclick="jumpToQuestion(${x.i})">${x.i + 1}</div>`;
+          const isFlagged = !!appState.flaggedQuestions[x.q.ID_Soal];
+          let styleBg = 'border:2px solid var(--coral);color:var(--danger);background:transparent;';
+          let badgeFlag = '';
+          
+          if (isFlagged) {
+            styleBg = 'background:#F59E0B;border-color:#D97706;color:#1a1305;';
+            badgeFlag = '<span style="font-size:9px;display:block;">🚩 Ragu</span>';
+          } else if (answered) {
+            styleBg = 'background:var(--primary);border-color:var(--primary);color:#fff;';
+            badgeFlag = `<span style="font-size:9px;display:block;opacity:.85;">Pilih ${appState.answers[x.q.ID_Soal]}</span>`;
+          }
+          
+          return `
+            <div class="q-nav-btn" style="width:auto;height:48px;border-radius:10px;padding:4px;flex-direction:column;font-size:13px;${styleBg}" onclick="jumpToQuestion(${x.i})">
+              <span>${x.i + 1}</span>
+              ${badgeFlag}
+            </div>
+          `;
         }).join('') + `</div>`;
     }
     
@@ -664,11 +1108,18 @@
     
     function doSubmitExam() {
       closeModal('modalConfirmSubmitExam');
+      window._isSubmittingExam = true;
       clearInterval(appState.timerInterval);
-      showToast('Mengirim...', 'Menyimpan jawaban ujian Anda.', 'success');
+      showToast('Mengirim...', 'Menyimpan jawaban ujian Anda ke server.', 'success');
+      
+      // Keluar dari mode layar penuh dengan mulus
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
     
       gasRun
         .withSuccessHandler(res => {
+          window._isSubmittingExam = false;
           if (!res) { showToast('Koneksi Terputus', 'Tidak ada respons dari server. Periksa koneksi internet Anda, dan pastikan GAS_URL di js/config.js sudah diisi dengan URL Web App (/exec) yang benar dan aktif.', 'danger'); return; }
           if (!res.success) { showToast('Gagal', res.message, 'danger'); return; }
           clearActiveExamStorage(appState.currentExam.ID_Ujian);
@@ -683,7 +1134,10 @@
           document.getElementById('scoreReadingBox').textContent = `${d.skorReading}/${d.maxReading}`;
           navigateTo('scoreResult');
         })
-        .withFailureHandler(err => showToast('Error', err.message, 'danger'))
+        .withFailureHandler(err => {
+          window._isSubmittingExam = false;
+          showToast('Error', err.message, 'danger');
+        })
         .submitExamAnswers(appState.participant.ID_Peserta, appState.participant.Nama, appState.currentExam.ID_Ujian, appState.answers, appState.examStartTimeISO);
     }
     

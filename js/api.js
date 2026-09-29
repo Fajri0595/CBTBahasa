@@ -22,20 +22,50 @@
  * resolve dengan objek respons ({ success, data, message }) apa adanya
  * — persis seperti nilai yang dulu diterima withSuccessHandler().
  */
-async function callServer(action, args) {
-  const res = await fetch(GAS_URL, {
-    method: 'POST',
-    // WAJIB text/plain — Content-Type application/json memicu CORS
-    // preflight (OPTIONS) yang tidak ditangani Apps Script Web App.
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action: action, args: args || [] })
-  });
+/**
+ * Kirim satu aksi + argumen ke backend GAS dengan mekanisme Resilience Retry
+ * (Exponential Backoff + Jitter). Mengatasi konkurensi puncak atau gangguan
+ * sementara pada Google Apps Script tanpa membuat request langsung gagal.
+ */
+async function callServer(action, args, maxRetries = 3) {
+  let attempt = 0;
+  let lastError = null;
 
-  if (!res.ok) {
-    throw new Error('HTTP ' + res.status + ' dari server saat memanggil aksi "' + action + '"');
+  while (attempt < maxRetries) {
+    try {
+      const res = await fetch(GAS_URL, {
+        method: 'POST',
+        // WAJIB text/plain — Content-Type application/json memicu CORS
+        // preflight (OPTIONS) yang tidak ditangani Apps Script Web App.
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: action, args: args || [] })
+      });
+
+      // Jika server mengembalikan status overload atau server error, coba ulang
+      if (!res.ok) {
+        if ([429, 500, 502, 503, 504].includes(res.status) && attempt < maxRetries - 1) {
+          throw new Error('HTTP ' + res.status + ' (server sibuk/sementara overload)');
+        }
+        throw new Error('HTTP ' + res.status + ' dari server saat memanggil aksi "' + action + '"');
+      }
+
+      return await res.json();
+    } catch (err) {
+      lastError = err;
+      attempt++;
+      if (attempt < maxRetries) {
+        // Exponential backoff dengan jitter: mis. 1000ms, 2000ms + random jitter
+        const delayMs = Math.floor(1000 * Math.pow(1.8, attempt - 1) + Math.random() * 400);
+        console.warn(`[gasRun Retry] Aksi "${action}" gagal (percobaan ${attempt}/${maxRetries}): ${err.message}. Mencoba kembali dalam ${delayMs}ms...`);
+        if (typeof showToast === 'function' && attempt === 2) {
+          showToast('Menghubungkan Ulang', 'Server sedang sibuk, sistem mencoba menghubungkan kembali secara otomatis...', 'warning');
+        }
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
   }
 
-  return await res.json();
+  throw lastError || new Error(`Gagal memanggil server untuk aksi "${action}" setelah ${maxRetries} percobaan.`);
 }
 
 /**
