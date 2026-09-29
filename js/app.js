@@ -146,6 +146,12 @@
           console.log('[CBT Bahasa] Server Build Active:', res.data.version);
         }
       }).getAppVersion();
+      
+      // Muat konfigurasi pengaturan sistem yang tersimpan agar langsung aktif
+      try {
+        const cachedSettings = localStorage.getItem('cbt_system_settings');
+        if (cachedSettings) applyLoadedSettings(JSON.parse(cachedSettings));
+      } catch(e){}
     
       // Pulihkan sesi dari localStorage agar refresh halaman tidak memaksa logout
       // (penting terutama untuk Admin/Dosen yang sedang memantau dashboard).
@@ -450,11 +456,17 @@
     
     function prepareLaunchExam(idUjian) {
       appState.pendingExamIdForLaunch = idUjian;
-      const readyCheck = document.getElementById('checkSoundReady');
-      if (readyCheck) readyCheck.checked = false;
-      const startBtn = document.getElementById('btnStartConfirmedExam');
-      if (startBtn) startBtn.disabled = true;
-      openModal('modalSoundCheck');
+      // Jika kebijakan institusi mewajibkan Sound Check (default: ya)
+      if (appState.requireSoundCheck !== false) {
+        const readyCheck = document.getElementById('checkSoundReady');
+        if (readyCheck) readyCheck.checked = false;
+        const startBtn = document.getElementById('btnStartConfirmedExam');
+        if (startBtn) startBtn.disabled = true;
+        openModal('modalSoundCheck');
+      } else {
+        // Lewati Sound Check sesuai pengaturan sistem institusi
+        confirmAndLaunchExam();
+      }
     }
     
     function toggleTestAudio() {
@@ -539,8 +551,8 @@
       const idUjian = appState.pendingExamIdForLaunch;
       appState.pendingExamIdForLaunch = null;
       
-      // Minta masuk ke Fullscreen Mode demi integritas ujian
-      if (document.documentElement.requestFullscreen) {
+      // Minta masuk ke Fullscreen Mode jika diwajibkan oleh kebijakan sistem
+      if (appState.enforceFullscreen !== false && document.documentElement.requestFullscreen) {
         document.documentElement.requestFullscreen().catch(err => {
           console.warn('[CBT Security] Fullscreen request rejected:', err);
         });
@@ -755,6 +767,12 @@
     function triggerCheatViolation(reason) {
       if (!appState.currentExam || window._isSubmittingExam) return;
       
+      // Jika toleransi diatur 0 (Nonaktif), catat di log audit saja tanpa peringatan agresif
+      if (appState.maxCheatViolations === 0) {
+        appState.cheatAuditLogs.push({ time: new Date().toLocaleTimeString('id-ID'), reason, count: 0 });
+        return;
+      }
+      
       appState.cheatViolations = (appState.cheatViolations || 0) + 1;
       const incident = {
         time: new Date().toLocaleTimeString('id-ID'),
@@ -777,7 +795,11 @@
       }
       
       if (appState.cheatViolations >= appState.maxCheatViolations) {
-        forceAutoSubmitCheating();
+        if (appState.cheatAction === 'warn_only') {
+          openModal('modalCheatWarning');
+        } else {
+          forceAutoSubmitCheating();
+        }
       } else {
         openModal('modalCheatWarning');
       }
@@ -1120,13 +1142,29 @@
           clearActiveExamStorage(appState.currentExam.ID_Ujian);
           disableExamProtection();
           const d = res.data;
-          document.getElementById('finalScoreDisplay').innerHTML = `${d.skorTotal}<span style="font-size:20px;color:var(--text-muted);"> / ${d.skalaMax}</span>`;
-          document.getElementById('passStatusBadge').innerHTML = d.statusLulus === 'Lulus'
-            ? `<span class="badge-pill badge-success"><span class="dot"></span> PASSED (LULUS)</span>`
-            : `<span class="badge-pill badge-danger"><span class="dot"></span> TIDAK LULUS</span>`;
-          document.getElementById('scoreListeningBox').textContent = `${d.skorListening}/${d.maxListening}`;
-          document.getElementById('scoreGrammarBox').textContent = `${d.skorGrammar}/${d.maxGrammar}`;
-          document.getElementById('scoreReadingBox').textContent = `${d.skorReading}/${d.maxReading}`;
+
+          if (appState.releaseScore === 'held') {
+            document.getElementById('finalScoreDisplay').innerHTML = `<span style="font-size:24px;color:var(--text-muted);"><i class="bi bi-shield-lock"></i> Hasil Ditahan</span>`;
+            document.getElementById('passStatusBadge').innerHTML = `<span class="badge-pill badge-warning"><span class="dot"></span> MENUNGGU VERIFIKASI PENGUJI</span>`;
+            document.getElementById('scoreListeningBox').textContent = '-';
+            document.getElementById('scoreGrammarBox').textContent = '-';
+            document.getElementById('scoreReadingBox').textContent = '-';
+          } else {
+            document.getElementById('finalScoreDisplay').innerHTML = `${d.skorTotal}<span style="font-size:20px;color:var(--text-muted);"> / ${d.skalaMax}</span>`;
+            document.getElementById('passStatusBadge').innerHTML = d.statusLulus === 'Lulus'
+              ? `<span class="badge-pill badge-success"><span class="dot"></span> PASSED (LULUS)</span>`
+              : `<span class="badge-pill badge-danger"><span class="dot"></span> TIDAK LULUS</span>`;
+            
+            if (appState.showSectionBreakdown === false) {
+              document.getElementById('scoreListeningBox').textContent = 'Dirahasiakan';
+              document.getElementById('scoreGrammarBox').textContent = 'Dirahasiakan';
+              document.getElementById('scoreReadingBox').textContent = 'Dirahasiakan';
+            } else {
+              document.getElementById('scoreListeningBox').textContent = `${d.skorListening}/${d.maxListening}`;
+              document.getElementById('scoreGrammarBox').textContent = `${d.skorGrammar}/${d.maxGrammar}`;
+              document.getElementById('scoreReadingBox').textContent = `${d.skorReading}/${d.maxReading}`;
+            }
+          }
           navigateTo('scoreResult');
         })
         .withFailureHandler(err => {
@@ -2053,33 +2091,101 @@
     }
     
     // ════════════════════════════════════════════════════════
-    // ADMIN — PENGATURAN SISTEM
+    // ADMIN — PENGATURAN SISTEM KOMPREHENSIF (5 MODUL)
     // ════════════════════════════════════════════════════════
+    function applyLoadedSettings(settings) {
+      if (!settings) return;
+      appState.systemSettings = settings;
+      if (settings.audioMaxPlays !== undefined) appState.audioMaxPlayLimit = Number(settings.audioMaxPlays) || 2;
+      if (settings.cheatTolerance !== undefined) appState.maxCheatViolations = Number(settings.cheatTolerance);
+      if (settings.cheatAction !== undefined) appState.cheatAction = settings.cheatAction;
+      if (settings.enforceFullscreen !== undefined) appState.enforceFullscreen = settings.enforceFullscreen !== '0';
+      if (settings.requireSoundCheck !== undefined) appState.requireSoundCheck = settings.requireSoundCheck !== '0';
+      if (settings.releaseScore !== undefined) appState.releaseScore = settings.releaseScore;
+      if (settings.showSectionBreakdown !== undefined) appState.showSectionBreakdown = settings.showSectionBreakdown !== '0';
+      if (settings.scoringMode !== undefined) appState.scoringMode = settings.scoringMode;
+      try {
+        localStorage.setItem('cbt_system_settings', JSON.stringify(settings));
+      } catch(e){}
+    }
+
+    function populateSettingsForm(data) {
+      if (!data) return;
+      const setVal = (id, val, def) => {
+        const el = document.getElementById(id);
+        if (el) el.value = (val !== undefined && val !== null && val !== '') ? val : def;
+      };
+      setVal('settingScoringMode', data.scoringMode, 'toefl_itp');
+      setVal('settingPassing', data.passingScoreDefault, 500);
+      setVal('settingDurasi', data.durasiDefault, 115);
+      setVal('settingSkalaMin', data.skalaMin, 310);
+      setVal('settingSkalaMax', data.skalaMax, 677);
+      setVal('settingCheatTolerance', data.cheatTolerance, '3');
+      setVal('settingCheatAction', data.cheatAction, 'auto_submit');
+      setVal('settingEnforceFullscreen', data.enforceFullscreen, '1');
+      setVal('settingAudioMaxPlays', data.audioMaxPlays, '2');
+      setVal('settingRequireSoundCheck', data.requireSoundCheck, '1');
+      setVal('settingReleaseScore', data.releaseScore, 'instant');
+      setVal('settingShowSectionBreakdown', data.showSectionBreakdown, '1');
+      setVal('settingInstitutionName', data.institutionName, '');
+      setVal('settingCertValidityDays', data.certValidityDays, 730);
+      setVal('settingDirectorName', data.directorName, '');
+      setVal('settingDirectorNIP', data.directorNIP, '');
+    }
+
     function loadSystemSettings() {
+      // Muat instan dari memori lokal terlebih dahulu
+      try {
+        const cached = localStorage.getItem('cbt_system_settings');
+        if (cached) populateSettingsForm(JSON.parse(cached));
+      } catch(e){}
+
       gasRun
         .withSuccessHandler(res => {
-          if (!res) { showToast('Koneksi Terputus', 'Tidak ada respons dari server. Periksa koneksi internet Anda, dan pastikan GAS_URL di js/config.js sudah diisi dengan URL Web App (/exec) yang benar dan aktif.', 'danger'); return; }
-          if (!res.success) return;
-          document.getElementById('settingPassing').value = res.data.passingScoreDefault || 500;
-          document.getElementById('settingDurasi').value = res.data.durasiDefault || 115;
-          document.getElementById('settingSkalaMin').value = res.data.skalaMin || 310;
-          document.getElementById('settingSkalaMax').value = res.data.skalaMax || 677;
+          if (!res) { showToast('Koneksi Terputus', 'Tidak ada respons dari server.', 'danger'); return; }
+          if (!res.success || !res.data) return;
+          populateSettingsForm(res.data);
+          applyLoadedSettings(res.data);
         })
         .withFailureHandler(err => showToast('Error', err.message, 'danger'))
         .getSystemSettings();
     }
+
     function handleSaveSettings(e) {
       e.preventDefault();
       const skalaMin = Number(document.getElementById('settingSkalaMin').value);
       const skalaMax = Number(document.getElementById('settingSkalaMax').value);
-      if (skalaMax <= skalaMin) { showToast('Peringatan', 'Skala Maksimum harus lebih besar dari Skala Minimum.', 'warning'); return; }
+      if (skalaMax <= skalaMin) { 
+        showToast('Peringatan', 'Skala Nilai Maksimum harus lebih besar dari Skala Minimum.', 'warning'); 
+        return; 
+      }
+
       const settings = {
+        scoringMode: document.getElementById('settingScoringMode').value,
         passingScoreDefault: document.getElementById('settingPassing').value,
         durasiDefault: document.getElementById('settingDurasi').value,
-        skalaMin: skalaMin, skalaMax: skalaMax
+        skalaMin: skalaMin,
+        skalaMax: skalaMax,
+        cheatTolerance: document.getElementById('settingCheatTolerance').value,
+        cheatAction: document.getElementById('settingCheatAction').value,
+        enforceFullscreen: document.getElementById('settingEnforceFullscreen').value,
+        audioMaxPlays: document.getElementById('settingAudioMaxPlays').value,
+        requireSoundCheck: document.getElementById('settingRequireSoundCheck').value,
+        releaseScore: document.getElementById('settingReleaseScore').value,
+        showSectionBreakdown: document.getElementById('settingShowSectionBreakdown').value,
+        institutionName: document.getElementById('settingInstitutionName').value.trim(),
+        certValidityDays: document.getElementById('settingCertValidityDays').value,
+        directorName: document.getElementById('settingDirectorName').value.trim(),
+        directorNIP: document.getElementById('settingDirectorNIP').value.trim()
       };
+
+      // Terapkan langsung ke lingkungan aplikasi aktif
+      applyLoadedSettings(settings);
+
       gasRun
-        .withSuccessHandler(res => showToast(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'danger'))
+        .withSuccessHandler(res => {
+          showToast(res.success ? 'Berhasil Disimpan' : 'Gagal', res.message || 'Seluruh parameter pengaturan sistem institusi berhasil diperbarui.', res.success ? 'success' : 'danger');
+        })
         .withFailureHandler(err => showToast('Error', err.message, 'danger'))
         .saveSystemSettings(settings);
     }

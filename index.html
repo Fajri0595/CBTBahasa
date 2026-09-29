@@ -491,23 +491,155 @@
     <section id="section-systemSettings" class="content-section app-content">
       <div class="page-header"><div><h2 data-i18n="hSettings">Pengaturan Sistem & Parameter Ujian</h2><p data-i18n="pSettings">Konfigurasi ambang kelulusan standar dan durasi default.</p></div></div>
       <form id="formSystemSettings" onsubmit="handleSaveSettings(event)">
+        <!-- Modul 1: Standar Nilai & Skema Konversi Skor -->
         <div class="form-section-card">
-          <div class="fs-title"><i class="bi bi-stars"></i> Standar Nilai & Durasi Default</div>
-          <div class="form-grid-2">
-            <div><label class="field-label">Default Passing Score</label><input type="number" id="settingPassing" class="input-cbt"></div>
-            <div><label class="field-label">Default Durasi (menit)</label><input type="number" id="settingDurasi" class="input-cbt"></div>
+          <div class="fs-title"><i class="bi bi-sliders2"></i> Skema Penilaian &amp; Konversi Skor</div>
+          <div class="fs-sub">Tentukan metode konversi skor mentah menjadi nilai terstandar institusi (TOEFL ITP, Linear, atau CEFR).</div>
+          <div class="form-grid-3">
+            <div>
+              <label class="field-label">Mode Konversi Skor</label>
+              <select id="settingScoringMode" class="input-cbt">
+                <option value="toefl_itp">TOEFL ITP Baku (Tabel 20-68 per Sesi → Total 310-677)</option>
+                <option value="linear">Skala Linear Fleksibel (Rentang Min - Max)</option>
+                <option value="cefr">Prediksi Kemahiran CEFR (A1 s.d. C2)</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label">Default Passing Score</label>
+              <input type="number" id="settingPassing" class="input-cbt" value="500">
+            </div>
+            <div>
+              <label class="field-label">Default Durasi (menit)</label>
+              <input type="number" id="settingDurasi" class="input-cbt" value="115">
+            </div>
+          </div>
+          <div class="form-grid-2" style="margin-top:14px;">
+            <div>
+              <label class="field-label">Skala Nilai Minimum (Linear)</label>
+              <input type="number" id="settingSkalaMin" class="input-cbt" value="310">
+              <div class="field-help">Skor terendah untuk 0 jawaban benar (misal: 310 untuk TOEFL atau 0 untuk skala 0-100).</div>
+            </div>
+            <div>
+              <label class="field-label">Skala Nilai Maksimum (Linear)</label>
+              <input type="number" id="settingSkalaMax" class="input-cbt" value="677">
+              <div class="field-help">Skor tertinggi untuk jawaban sempurna (misal: 677 untuk TOEFL atau 100 untuk skala 0-100).</div>
+            </div>
           </div>
         </div>
+
+        <!-- Modul 2: Kebijakan Integritas & Anti-Curang -->
         <div class="form-section-card">
-          <div class="fs-title"><i class="bi bi-sliders2"></i> Skala Konversi Nilai Akhir</div>
-          <div class="fs-sub">Digunakan untuk mengonversi persentase jawaban benar menjadi skor akhir. Ubah nilai ini jika institusi ingin memakai skala selain TOEFL (310-677) — misalnya skala 0-100.</div>
-          <div class="form-grid-2">
-            <div><label class="field-label">Skala Minimum</label><input type="number" id="settingSkalaMin" class="input-cbt"></div>
-            <div><label class="field-label">Skala Maksimum</label><input type="number" id="settingSkalaMax" class="input-cbt"></div>
+          <div class="fs-title"><i class="bi bi-shield-lock"></i> Kebijakan Integritas &amp; Anti-Curang</div>
+          <div class="fs-sub">Kontrol ketat pengawasan ujian, deteksi perpindahan tab, dan penegakan layar penuh.</div>
+          <div class="form-grid-3">
+            <div>
+              <label class="field-label">Toleransi Pindah Tab / Fullscreen</label>
+              <select id="settingCheatTolerance" class="input-cbt">
+                <option value="1">1 Kali (Sangat Ketat - Langsung Diskualifikasi)</option>
+                <option value="2">2 Kali Peringatan</option>
+                <option value="3" selected>3 Kali Peringatan (Standar Institusi)</option>
+                <option value="5">5 Kali Peringatan (Longgar / Tryout)</option>
+                <option value="0">Nonaktif (Hanya Rekam Log Tanpa Batas)</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label">Tindakan Saat Batas Tercapai</label>
+              <select id="settingCheatAction" class="input-cbt">
+                <option value="auto_submit">Auto-Submit &amp; Kunci Ujian</option>
+                <option value="warn_only">Peringatan Saja (Catat di Audit)</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label">Wajib Layar Penuh (Fullscreen)</label>
+              <select id="settingEnforceFullscreen" class="input-cbt">
+                <option value="1">Ya, Wajib Layar Penuh</option>
+                <option value="0">Tidak, Izinkan Mode Jendela</option>
+              </select>
+            </div>
           </div>
         </div>
+
+        <!-- Modul 3: Regulasi Audio Listening Institusi -->
+        <div class="form-section-card">
+          <div class="fs-title"><i class="bi bi-headphones"></i> Regulasi Pemutaran Audio Listening</div>
+          <div class="fs-sub">Tentukan batasan jumlah pemutaran audio listening dan syarat uji coba perangkat suara peserta.</div>
+          <div class="form-grid-2">
+            <div>
+              <label class="field-label">Batas Maksimal Putar Audio per Soal</label>
+              <select id="settingAudioMaxPlays" class="input-cbt">
+                <option value="1">1 Kali Putar Saja (Standar Ujian Resmi)</option>
+                <option value="2" selected>2 Kali Putar (Standar Rekomendasi CBT)</option>
+                <option value="3">3 Kali Putar</option>
+                <option value="999">Tanpa Batas (Bebas / Mode Belajar)</option>
+              </select>
+              <div class="field-help">Setelah batas tercapai, tombol putar audio akan dinonaktifkan otomatis.</div>
+            </div>
+            <div>
+              <label class="field-label">Wajib Sound Check Sebelum Mulai</label>
+              <select id="settingRequireSoundCheck" class="input-cbt">
+                <option value="1" selected>Wajib Uji Coba Headset Sebelum Ujian</option>
+                <option value="0">Lewati Sound Check (Langsung Mulai)</option>
+              </select>
+              <div class="field-help">Peserta diwajibkan menguji kejelasan suara sebelum waktu ujian berjalan.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modul 4: Privasi & Publikasi Hasil Peserta -->
+        <div class="form-section-card">
+          <div class="fs-title"><i class="bi bi-eye"></i> Privasi &amp; Publikasi Hasil Peserta</div>
+          <div class="fs-sub">Atur transparansi rilis skor kepada peserta setelah sesi ujian berakhir.</div>
+          <div class="form-grid-2">
+            <div>
+              <label class="field-label">Rilis Nilai Akhir ke Peserta</label>
+              <select id="settingReleaseScore" class="input-cbt">
+                <option value="instant" selected>Tampilkan Langsung Setelah Submit Final</option>
+                <option value="held">Nilai Ditahan (Hanya Ditampilkan di Laporan Dosen/Admin)</option>
+              </select>
+              <div class="field-help">Pilih 'Nilai Ditahan' untuk ujian seleksi atau yudisium resmi.</div>
+            </div>
+            <div>
+              <label class="field-label">Rincian Sub-Skor Seksi (L/S/R)</label>
+              <select id="settingShowSectionBreakdown" class="input-cbt">
+                <option value="1" selected>Tampilkan Rincian Skor per Seksi</option>
+                <option value="0">Hanya Tampilkan Total Skor</option>
+              </select>
+              <div class="field-help">Apakah peserta berhak melihat nilai Listening, Structure, dan Reading terpisah.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modul 5: Profil Institusi & Transkrip / E-Sertifikat -->
+        <div class="form-section-card">
+          <div class="fs-title"><i class="bi bi-award"></i> Profil Lembaga &amp; Legalitas Dokumen</div>
+          <div class="fs-sub">Informasi resmi yang akan tercetak pada rekap laporan hasil ujian dan e-sertifikat kebahasaan.</div>
+          <div class="form-grid-2">
+            <div>
+              <label class="field-label">Nama Lembaga / Pusat Bahasa</label>
+              <input type="text" id="settingInstitutionName" class="input-cbt" placeholder="Pusat Pengembangan Bahasa Institusi">
+            </div>
+            <div>
+              <label class="field-label">Masa Berlaku Sertifikat (Hari)</label>
+              <input type="number" id="settingCertValidityDays" class="input-cbt" value="730">
+              <div class="field-help">Standar masa berlaku TOEFL/kebahasaan: 730 hari (2 tahun).</div>
+            </div>
+          </div>
+          <div class="form-grid-2" style="margin-top:14px;">
+            <div>
+              <label class="field-label">Nama Kepala Pusat Bahasa / Penanggung Jawab</label>
+              <input type="text" id="settingDirectorName" class="input-cbt" placeholder="Dr. Siti Rahmawati, M.Pd.">
+            </div>
+            <div>
+              <label class="field-label">NIP / NIDN Pejabat Penandatangan</label>
+              <input type="text" id="settingDirectorNIP" class="input-cbt" placeholder="198205142008012015">
+            </div>
+          </div>
+        </div>
+
         <div class="sticky-actionbar">
-          <button type="submit" class="btn-cbt btn-cbt-primary">Simpan Perubahan Pengaturan</button>
+          <button type="submit" class="btn-cbt btn-cbt-primary" style="padding:12px 24px;">
+            <i class="bi bi-check2-circle"></i> Simpan Seluruh Pengaturan Sistem
+          </button>
         </div>
       </form>
 
