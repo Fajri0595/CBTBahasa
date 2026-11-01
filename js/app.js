@@ -221,6 +221,47 @@
     function closeModal(id) { document.getElementById(id).classList.remove('show'); }
     
     // ════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════
+    // AUTH — DYNAMIC TAB SWITCHING & MOTION GRAPHICS
+    // ════════════════════════════════════════════════════════
+    function switchAuthTab(targetTab) {
+      const isStaff = targetTab === 'staff';
+      const currentViewId = isStaff ? 'view-participant-entry' : 'view-staff-login';
+      const targetViewId = isStaff ? 'view-staff-login' : 'view-participant-entry';
+
+      const currentView = document.getElementById(currentViewId);
+      if (currentView) {
+        const currentContainer = currentView.querySelector('.auth-form-container');
+        if (currentContainer) {
+          currentContainer.classList.add('auth-card-exit');
+        }
+      }
+
+      setTimeout(() => {
+        showView(targetViewId);
+        const targetView = document.getElementById(targetViewId);
+        if (targetView) {
+          const newContainer = targetView.querySelector('.auth-form-container');
+          if (newContainer) {
+            newContainer.classList.remove('auth-card-exit');
+            newContainer.classList.add('auth-card-enter');
+            setTimeout(() => newContainer.classList.remove('auth-card-enter'), 400);
+          }
+        }
+      }, 160);
+    }
+
+    function togglePasswordVisibility(inputId, btn) {
+      const input = document.getElementById(inputId);
+      if (!input) return;
+      const isPass = input.type === 'password';
+      input.type = isPass ? 'text' : 'password';
+      const icon = btn.querySelector('i');
+      if (icon) {
+        icon.className = isPass ? 'bi bi-eye-slash' : 'bi bi-eye';
+      }
+    }
+
     // AUTH — PESERTA
     // ════════════════════════════════════════════════════════
     function handleParticipantEntry(e) {
@@ -246,7 +287,7 @@
             showView('view-participant-app');
             loadAvailableExams();
           } else {
-            errBox.textContent = res.message; errBox.style.display = 'block';
+            errBox.innerHTML = '<i class="bi bi-exclamation-triangle-fill" style="margin-right:6px;"></i> ' + escapeHtml(res.message); errBox.style.display = 'block';
           }
         })
         .withFailureHandler(err => { btn.disabled = false; btn.innerHTML = 'Continue / Mulai Sesi'; showToast('Error', err.message, 'danger'); })
@@ -294,7 +335,7 @@
             showView('view-staff-app');
             navigateTo(res.data.role === 'admin' ? 'adminDashboard' : 'dosenDashboard');
           } else {
-            errBox.textContent = res.message; errBox.style.display = 'block';
+            errBox.innerHTML = '<i class="bi bi-exclamation-triangle-fill" style="margin-right:6px;"></i> ' + escapeHtml(res.message); errBox.style.display = 'block';
           }
         })
         .withFailureHandler(err => { btn.disabled = false; showToast('Error', err.message, 'danger'); })
