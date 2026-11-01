@@ -1292,8 +1292,15 @@
         .getExamsByLecturer(getExamOwnerId());
     }
     
-    function statCard(icon, iconClass, value, label) {
-      return `<div class="stat-card"><div class="stat-icon ${iconClass}"><i class="bi ${icon}"></i></div><div class="stat-value">${value}</div><div class="stat-label">${label}</div></div>`;
+    function statCard(icon, iconClass, value, label, subtext = '') {
+      const subHtml = subtext ? `<div class="stat-sub">${subtext}</div>` : '';
+      return `
+        <div class="stat-card">
+          <div class="stat-icon ${iconClass}"><i class="bi ${icon}"></i></div>
+          <div class="stat-value">${value}</div>
+          <div class="stat-label">${label}</div>
+          ${subHtml}
+        </div>`;
     }
     function statusBadge(status) {
       const map = { Aktif: 'badge-success', Draft: 'badge-neutral', Diarsipkan: 'badge-neutral', Archived: 'badge-neutral' };
@@ -1698,46 +1705,247 @@
       gasRun
         .withSuccessHandler(res => {
           if (!res) { showToast('Koneksi Terputus', 'Tidak ada respons dari server. Periksa koneksi internet Anda, dan pastikan GAS_URL di js/config.js sudah diisi dengan URL Web App (/exec) yang benar dan aktif.', 'danger'); return; }
-          if (!res.success) return;
+          if (!res.success) { showToast('Error', res.message, 'danger'); return; }
           const d = res.data;
+          
+          // 4 Kartu KPI Utama dengan sub-info
+          const totalSelesai = Number(d.totalHasilSelesai) || 0;
+          const totalLulus = Number(d.lulus) || 0;
+          const totalPeserta = Number(d.totalPeserta) || 0;
+          const ujianAktif = Number(d.ujianAktif) || 0;
+          const rataRata = d.rataRata || 0;
+          const tingkatKelulusan = d.tingkatKelulusan !== undefined ? d.tingkatKelulusan : '0.0';
+
           document.getElementById('adminStatCards').innerHTML =
-            statCard('bi-people-fill','icon-bg-teal', d.totalPeserta, 'Total Peserta Terdaftar') +
-            statCard('bi-clipboard2-check','icon-bg-amber', d.ujianAktif, 'Ujian Aktif') +
-            statCard('bi-bar-chart-line','icon-bg-indigo', d.rataRata, 'Rata-rata Skor Institusi') +
-            statCard('bi-percent','icon-bg-coral', d.tingkatKelulusan + '%', 'Tingkat Kelulusan');
-    
+            statCard('bi-people-fill', 'icon-bg-teal', totalPeserta, 'Total Peserta Terdaftar', '<i class="bi bi-person-check"></i> Terdaftar di sistem') +
+            statCard('bi-clipboard2-check', 'icon-bg-amber', ujianAktif, 'Ujian Aktif Berjalan', '<i class="bi bi-broadcast"></i> Sesi siap diakses') +
+            statCard('bi-bar-chart-line', 'icon-bg-indigo', rataRata, 'Rata-rata Skor Institusi', '<i class="bi bi-award"></i> Skala TOEFL 310–677') +
+            statCard('bi-percent', 'icon-bg-coral', tingkatKelulusan + '%', 'Tingkat Kelulusan', `<i class="bi bi-check-circle"></i> ${totalLulus} dari ${totalSelesai} siswa lulus`);
+
+          // Update badge total selesai di header analitik
+          const badgeHasil = document.getElementById('dashboardTotalHasilBadge');
+          if (badgeHasil) {
+            badgeHasil.innerHTML = `<i class="bi bi-mortarboard"></i> ${totalSelesai} Peserta Selesai`;
+          }
+
           renderDistribusiChart(d.distribusi);
-    
-          document.getElementById('recentActivityList').innerHTML = d.recentLogs.length ? d.recentLogs.map(l => `
-            <div style="padding:10px 0;border-bottom:1px solid var(--border-color);">
-              <div style="font-size:12.5px;font-weight:700;">${l.Nama_User} <span style="color:var(--text-muted);font-weight:400;">— ${l.Aksi}</span></div>
-              <div style="font-size:11.5px;color:var(--text-muted);">${l.Detail || ''} · ${formatDate(l.Timestamp)}</div>
-            </div>`).join('') : '<div class="empty-state">Belum ada aktivitas.</div>';
+          renderKelulusanDonutChart(d.lulus, d.tidakLulus, tingkatKelulusan);
+          renderDashboardRecentLogs(d.recentLogs);
         })
         .withFailureHandler(err => showToast('Error', err.message, 'danger'))
         .getAdminDashboardData();
     }
-    
+
     function renderDistribusiChart(distribusi) {
       const ctx = document.getElementById('chartDistribusi');
       if (!ctx) return;
-      if (appState.chartInstances.distribusi) appState.chartInstances.distribusi.destroy();
+      if (appState.chartInstances.distribusi) {
+        appState.chartInstances.distribusi.destroy();
+      }
+
+      const defaultBuckets = ['<420', '420-460', '461-500', '501-550', '551-600', '>600'];
+      const labels = (distribusi && distribusi.length) ? distribusi.map(d => d.label) : defaultBuckets;
+      const values = (distribusi && distribusi.length) ? distribusi.map(d => Number(d.count) || 0) : [0, 0, 0, 0, 0, 0];
+      const totalParticipants = values.reduce((a, b) => a + b, 0);
+
+      // Warna bertingkat CEFR: Merah (Elem), Kuning (Low-Int), Gold (Int), Teal (High-Int), Biru (Adv), Violet (Prof)
+      const colors = ['#F43F5E', '#F59E0B', '#EAB308', '#0D9488', '#2563EB', '#7C3AED'];
+
       appState.chartInstances.distribusi = new Chart(ctx, {
         type: 'bar',
         data: {
-          labels: distribusi.map(d => d.label),
-          datasets: [{ data: distribusi.map(d => d.count), backgroundColor: ['#FB7185','#F59E0B','#FBBF24','#0F766E','#14B8A6','#6366F1'], borderRadius: 8 }]
+          labels: labels,
+          datasets: [{
+            label: 'Jumlah Peserta',
+            data: values,
+            backgroundColor: colors,
+            borderRadius: 6,
+            borderSkipped: false,
+            maxBarThickness: 28
+          }]
         },
         options: {
           responsive: true,
-          plugins: { legend: { display: false } },
-          scales: { y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } } }
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: 'rgba(15, 23, 42, 0.92)',
+              titleFont: { family: 'Poppins', size: 12, weight: '600' },
+              bodyFont: { family: 'Inter', size: 11.5 },
+              padding: 9,
+              cornerRadius: 7,
+              callbacks: {
+                title: items => 'Rentang Skor: ' + items[0].label,
+                label: context => {
+                  const val = context.raw || 0;
+                  const pct = totalParticipants > 0 ? ((val / totalParticipants) * 100).toFixed(1) : 0;
+                  return '  ' + val + ' Peserta (' + pct + '%)';
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: {
+                color: '#334155',
+                font: { family: 'Inter', size: 10.5, weight: '600' }
+              }
+            },
+            y: {
+              beginAtZero: true,
+              grid: { color: 'rgba(226, 232, 240, 0.7)' },
+              ticks: {
+                stepSize: 1,
+                precision: 0,
+                color: '#64748B',
+                font: { family: 'Inter', size: 11 }
+              }
+            }
+          }
         }
       });
     }
-    
-    // ════════════════════════════════════════════════════════
-    // ADMIN — MANAJEMEN DOSEN
+
+    function renderKelulusanDonutChart(lulus, tidakLulus, tingkatKelulusan) {
+      const ctx = document.getElementById('chartKelulusan');
+      if (!ctx) return;
+      if (appState.chartInstances.kelulusan) {
+        appState.chartInstances.kelulusan.destroy();
+      }
+
+      const lCount = Number(lulus) || 0;
+      const tlCount = Number(tidakLulus) || 0;
+      const total = lCount + tlCount;
+      const pctStr = total > 0 ? ((lCount / total) * 100).toFixed(1) : (tingkatKelulusan !== undefined ? String(tingkatKelulusan) : '0.0');
+
+      const chartData = total > 0 ? [lCount, tlCount] : [0, 1];
+      const chartColors = total > 0 ? ['#10B981', '#F43F5E'] : ['#E2E8F0', '#E2E8F0'];
+
+      appState.chartInstances.kelulusan = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Lulus', 'Belum Lulus'],
+          datasets: [{
+            data: chartData,
+            backgroundColor: chartColors,
+            borderWidth: 2,
+            borderColor: '#ffffff',
+            hoverOffset: 3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '72%',
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              enabled: total > 0,
+              backgroundColor: 'rgba(15, 23, 42, 0.92)',
+              titleFont: { family: 'Poppins', size: 12, weight: '600' },
+              bodyFont: { family: 'Inter', size: 11.5 },
+              padding: 9,
+              cornerRadius: 7,
+              callbacks: {
+                label: ctx => {
+                  const val = ctx.raw || 0;
+                  const p = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
+                  return '  ' + ctx.label + ': ' + val + ' Peserta (' + p + '%)';
+                }
+              }
+            }
+          }
+        },
+        plugins: [{
+          id: 'centerTextKelulusan',
+          beforeDraw: function(chart) {
+            const { width, height, ctx } = chart;
+            ctx.save();
+            ctx.font = '700 19px Poppins, sans-serif';
+            ctx.fillStyle = '#0F172A';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(pctStr + '%', width / 2, height / 2 - 5);
+
+            ctx.font = '500 10.5px Inter, sans-serif';
+            ctx.fillStyle = '#64748B';
+            ctx.fillText('Lulus', width / 2, height / 2 + 13);
+            ctx.restore();
+          }
+        }]
+      });
+
+      // Update panel mini stats di bawah Donut
+      const miniEl = document.getElementById('kelulusanMiniStats');
+      if (miniEl) {
+        miniEl.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:4px 8px;background:rgba(16,185,129,0.08);border-radius:6px;">
+            <span style="color:#065F46;font-weight:600;display:flex;align-items:center;gap:5px;">
+              <span style="width:7px;height:7px;border-radius:50%;background:#10B981;display:inline-block;"></span>Lulus
+            </span>
+            <strong style="color:#065F46;">${lCount} Siswa</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:4px 8px;background:rgba(244,63,94,0.08);border-radius:6px;">
+            <span style="color:#9F1239;font-weight:600;display:flex;align-items:center;gap:5px;">
+              <span style="width:7px;height:7px;border-radius:50%;background:#F43F5E;display:inline-block;"></span>Belum Lulus
+            </span>
+            <strong style="color:#9F1239;">${tlCount} Siswa</strong>
+          </div>`;
+      }
+    }
+
+    function getActivityBadgeConfig(actionStr) {
+      const a = String(actionStr || '').toLowerCase();
+      if (a.includes('submit') || a.includes('selesai')) {
+        return { label: 'Submit', badgeClass: 'badge-feed-success', icon: 'bi-check2-circle', iconBg: 'feed-icon-success' };
+      }
+      if (a.includes('login') || a.includes('verifikasi')) {
+        return { label: 'Auth', badgeClass: 'badge-feed-info', icon: 'bi-box-arrow-in-right', iconBg: 'feed-icon-info' };
+      }
+      if (a.includes('mulai') || a.includes('resume') || a.includes('lanjut')) {
+        return { label: 'Exam', badgeClass: 'badge-feed-warning', icon: 'bi-play-circle', iconBg: 'feed-icon-warning' };
+      }
+      if (a.includes('generate') || a.includes('import') || a.includes('buat') || a.includes('tambah') || a.includes('edit')) {
+        return { label: 'Setup', badgeClass: 'badge-feed-purple', icon: 'bi-gear-wide-connected', iconBg: 'feed-icon-purple' };
+      }
+      return { label: 'Aksi', badgeClass: 'badge-feed-neutral', icon: 'bi-activity', iconBg: 'feed-icon-neutral' };
+    }
+
+    function renderDashboardRecentLogs(logs) {
+      const container = document.getElementById('recentActivityList');
+      if (!container) return;
+      if (!logs || !logs.length) {
+        container.innerHTML = '<div class="empty-state" style="padding:24px 0;"><i class="bi bi-inbox"></i>Belum ada aktivitas tercatat.</div>';
+        return;
+      }
+
+      container.innerHTML = '<div class="activity-feed-list">' + logs.map(l => {
+        const badge = getActivityBadgeConfig(l.Aksi);
+        const userName = escapeHtml(l.Nama_User || 'Sistem');
+        const actionTitle = escapeHtml(l.Aksi || 'Aktivitas');
+        const detail = escapeHtml(l.Detail || '');
+        const timeStr = formatDate(l.Timestamp);
+
+        return `
+          <div class="activity-feed-item">
+            <div class="activity-feed-icon ${badge.iconBg}">
+              <i class="bi ${badge.icon}"></i>
+            </div>
+            <div class="activity-feed-content">
+              <div class="activity-feed-header">
+                <span class="activity-user-name" title="${userName}">${userName}</span>
+                <span class="activity-action-badge ${badge.badgeClass}">${badge.label}</span>
+              </div>
+              <div class="activity-action-title">${actionTitle}</div>
+              ${detail ? `<div class="activity-detail">${detail}</div>` : ''}
+              <div class="activity-time"><i class="bi bi-clock"></i> ${timeStr}</div>
+            </div>
+          </div>`;
+      }).join('') + '</div>';
+    }
+
     // ════════════════════════════════════════════════════════
     function loadLecturers() {
       gasRun
