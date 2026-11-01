@@ -907,6 +907,31 @@
     const SESI_ICON = { Listening: 'bi-headphones', 'Grammar-Structure': 'bi-pencil-square', Grammar: 'bi-pencil-square', Structure: 'bi-pencil-square', Reading: 'bi-book' };
     const SESI_LABEL = { Listening: 'Section 1: Listening', 'Grammar-Structure': 'Section 2: Structure', Grammar: 'Section 2: Structure', Structure: 'Section 2: Structure', Reading: 'Section 3: Reading' };
     
+    // ── Helper: Sanitasi HTML untuk Cegah XSS ──
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function sanitizeRichText(html) {
+      if (!html) return '';
+      if (!/<[a-z][\s\S]*>/i.test(html)) {
+        return escapeHtml(html).replace(/\n/g, '<br>');
+      }
+      return String(html)
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+        .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+        .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
+        .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '')
+        .replace(/\son\w+\s*=\s*(?:'[^']*'|"[^"]*"|[^\s>]+)/gi, '')
+        .replace(/href\s*=\s*(?:'javascript:[^']*'|"javascript:[^"]*"|javascript:[^\s>]+)/gi, 'href="#"');
+    }
+
     // Deteksi teks Arab (rentang Unicode Arabic & Arabic Supplement) agar soal
     // berbahasa Arab dapat ditampilkan rata kanan (RTL) supaya mudah dibaca.
     function isArabicText(str) {
@@ -969,11 +994,15 @@
         const text = q['Pilihan_' + letter];
         if (!text) return '';
         const optionRtl = isArabicText(text);
+        const safeText = escapeHtml(text);
         return `<div class="option-card ${selected === letter ? 'selected' : ''}" onclick="selectAnswer('${q.ID_Soal}','${letter}')" ${optionRtl ? 'style="flex-direction:row-reverse;"' : ''}>
-          <div class="opt-letter">${letter}</div><div ${optionRtl ? 'dir="rtl" style="text-align:right;flex:1;"' : ''}>${text}</div>
+          <div class="opt-letter">${letter}</div><div ${optionRtl ? 'dir="rtl" style="text-align:right;flex:1;"' : ''}>${safeText}</div>
         </div>`;
       }).join('');
       
+      const safePassage = sanitizeRichText(q.Passage_Teks);
+      const safePertanyaan = sanitizeRichText(q.Pertanyaan);
+
       if (hasPassage) {
         // TAMPILAN SPLIT-SCREEN (Teks Bacaan di Kiri, Soal di Kanan)
         dynamicWrap.innerHTML = `
@@ -984,13 +1013,13 @@
                 <span style="font-size:11.5px;color:var(--text-muted);font-weight:normal;">Seksi ${q.Sesi}</span>
               </div>
               <div class="passage-split-content" ${passageRtl ? 'dir="rtl" style="text-align:right;"' : ''}>
-                ${q.Passage_Teks}
+                ${safePassage}
               </div>
             </aside>
             <div class="card-cbt">
               ${audioHtml}
               <div id="questionText" style="font-weight:600;margin-bottom:16px;" ${questionRtl ? 'dir="rtl" style="text-align:right;"' : ''}>
-                ${q.Pertanyaan}
+                ${safePertanyaan}
               </div>
               <div id="optionsWrap">${optionsHtml}</div>
               <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding-top:14px;border-top:1px solid var(--border-color);">
@@ -1006,7 +1035,7 @@
           <div class="card-cbt" id="standardQuestionCard">
             ${audioHtml}
             <div id="questionText" style="font-weight:600;margin-bottom:16px;" ${questionRtl ? 'dir="rtl" style="text-align:right;"' : ''}>
-              ${q.Pertanyaan}
+              ${safePertanyaan}
             </div>
             <div id="optionsWrap">${optionsHtml}</div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding-top:14px;border-top:1px solid var(--border-color);">
@@ -1020,10 +1049,23 @@
       updateQNavGrid();
     }
     
+    // Perbaikan bug audio: memilih opsi jawaban TIDAK me-render ulang seluruh DOM,
+    // sehingga audio listening yang sedang diputar tidak terpotong seketika!
     function selectAnswer(idSoal, letter) {
       appState.answers[idSoal] = letter;
-      renderQuestion(appState.currentQuestionIndex);
+      
+      const optionCards = document.querySelectorAll('#optionsWrap .option-card');
+      optionCards.forEach(card => {
+        const letterEl = card.querySelector('.opt-letter');
+        if (letterEl && letterEl.textContent.trim().toUpperCase() === String(letter).toUpperCase()) {
+          card.classList.add('selected');
+        } else {
+          card.classList.remove('selected');
+        }
+      });
+
       if (appState.currentExam) localStorage.setItem(getDraftAnswersKey(appState.currentExam.ID_Ujian), JSON.stringify(appState.answers));
+      updateQNavGrid();
     }
     
     function updateQNavGrid() {
@@ -1160,9 +1202,12 @@
               document.getElementById('scoreGrammarBox').textContent = 'Dirahasiakan';
               document.getElementById('scoreReadingBox').textContent = 'Dirahasiakan';
             } else {
-              document.getElementById('scoreListeningBox').textContent = `${d.skorListening}/${d.maxListening}`;
-              document.getElementById('scoreGrammarBox').textContent = `${d.skorGrammar}/${d.maxGrammar}`;
-              document.getElementById('scoreReadingBox').textContent = `${d.skorReading}/${d.maxReading}`;
+              const lScaled = d.scaledListening !== undefined ? ` (Skor: ${d.scaledListening})` : '';
+              const gScaled = d.scaledGrammar !== undefined ? ` (Skor: ${d.scaledGrammar})` : '';
+              const rScaled = d.scaledReading !== undefined ? ` (Skor: ${d.scaledReading})` : '';
+              document.getElementById('scoreListeningBox').textContent = `${d.skorListening}/${d.maxListening}${lScaled}`;
+              document.getElementById('scoreGrammarBox').textContent = `${d.skorGrammar}/${d.maxGrammar}${gScaled}`;
+              document.getElementById('scoreReadingBox').textContent = `${d.skorReading}/${d.maxReading}${rScaled}`;
             }
           }
           navigateTo('scoreResult');
@@ -1626,12 +1671,23 @@
     function downloadResultsExcel() {
       const data = window._currentResultsCache || window._globalReportCache || [];
       if (!data.length) { showToast('Info', 'Tidak ada data untuk diunduh.', 'warning'); return; }
-      const headers = Object.keys(data[0]).join(',');
-      const rows = data.map(r => Object.values(r).map(v => `"${v}"`).join(',')).join('\n');
-      const blob = new Blob([headers + '\n' + rows], { type: 'text/csv' });
+      const headers = Object.keys(data[0]);
+      const headerLine = headers.join(',');
+
+      // Sanitasi nilai sel untuk cegah CSV Formula Injection (=, +, -, @)
+      const sanitizeCell = val => {
+        if (val === null || val === undefined) return '""';
+        let s = String(val).replace(/"/g, '""');
+        if (/^[=\+\-@]/.test(s)) s = "'" + s;
+        return `"${s}"`;
+      };
+
+      const rows = data.map(r => headers.map(h => sanitizeCell(r[h])).join(',')).join('\r\n');
+      // Sisipkan UTF-8 BOM (\uFEFF) agar Microsoft Excel di Windows membuka karakter Unicode & kolom dengan rapi
+      const blob = new Blob(['\uFEFF' + headerLine + '\r\n' + rows], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = 'rekap_hasil_ujian.csv';
+      link.download = `rekap_hasil_ujian_${new Date().toISOString().slice(0, 10)}.csv`;
       link.click();
     }
     
@@ -1932,9 +1988,16 @@
     
       if (!filtered.length) { showToast('Peringatan', 'Tidak ada kode akses yang masih aktif (belum dipakai) untuk diunduh pada pilihan ini.', 'warning'); return; }
     
+      const sanitizeCell = val => {
+        if (val === null || val === undefined) return '""';
+        let s = String(val).replace(/"/g, '""');
+        if (/^[=\+\-@]/.test(s)) s = "'" + s;
+        return `"${s}"`;
+      };
+
       const rows = filtered.map(p => [p.Nama || '', p.Kontak || '', p.Kode_Akses, getExamNameById(p.ID_Ujian_Target), p.Status_Kode]);
-      const csv = 'Nama,Kontak,Kode Akses,Ujian Target,Status\n' + rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
-      const blob = new Blob([csv], { type: 'text/csv' });
+      const csv = '\uFEFF' + 'Nama,Kontak,Kode Akses,Ujian Target,Status\r\n' + rows.map(r => r.map(sanitizeCell).join(',')).join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = 'kode_akses_peserta.csv';
@@ -2266,45 +2329,56 @@
       navigateTo('itemAnalysis');
       const tbody = document.getElementById('itemAnalysisTableBody');
       const summaryBox = document.getElementById('itemAnalysisSummary');
-      tbody.innerHTML = `<tr><td colspan="8"><div class="skeleton" style="height:40px;"></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9"><div class="skeleton" style="height:40px;"></div></td></tr>`;
       summaryBox.innerHTML = '';
     
       gasRun
         .withSuccessHandler(res => {
-          if (!res) { tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state" style="color:var(--danger);">Tidak ada respons dari server.</div></td></tr>`; return; }
-          if (!res.success) { tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state" style="color:var(--danger);">${res.message}</div></td></tr>`; return; }
+          if (!res) { tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state" style="color:var(--danger);">Tidak ada respons dari server.</div></td></tr>`; return; }
+          if (!res.success) { tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state" style="color:var(--danger);">${res.message}</div></td></tr>`; return; }
     
           const d = res.data;
           if (!d.items.length) {
-            tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><i class="bi bi-bar-chart"></i>Belum ada peserta yang menyelesaikan ujian ini, atau ujian belum memiliki soal.</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><i class="bi bi-bar-chart"></i>Belum ada peserta yang menyelesaikan ujian ini, atau ujian belum memiliki soal.</div></td></tr>`;
             return;
           }
     
           const mudah = d.items.filter(i => i.tingkatKesulitan === 'Mudah').length;
           const sedang = d.items.filter(i => i.tingkatKesulitan === 'Sedang').length;
           const sulit = d.items.filter(i => i.tingkatKesulitan === 'Sulit').length;
+          const dayaPembedaBaik = d.items.filter(i => (i.dayaPembedaVal || 0) >= 0.30).length;
+
           summaryBox.innerHTML = `
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:16px;">
               ${statCard('bi-people', 'icon-bg-teal', d.totalPeserta, 'Total Peserta Dianalisis')}
               ${statCard('bi-emoji-smile', 'icon-bg-success', mudah, 'Soal Kategori Mudah')}
               ${statCard('bi-emoji-neutral', 'icon-bg-amber', sedang, 'Soal Kategori Sedang')}
               ${statCard('bi-emoji-frown', 'icon-bg-coral', sulit, 'Soal Kategori Sulit')}
+              ${statCard('bi-check2-all', 'icon-bg-indigo', dayaPembedaBaik, 'Daya Pembeda Baik (D ≥ 0.30)')}
             </div>`;
     
           const difficultyBadge = { Mudah: 'badge-success', Sedang: 'badge-warning', Sulit: 'badge-danger' };
-          tbody.innerHTML = d.items.map(it => `
+          tbody.innerHTML = d.items.map(it => {
+            const dVal = it.dayaPembedaVal !== undefined ? it.dayaPembedaVal : 0;
+            const dColor = dVal >= 0.40 ? 'var(--success)' : dVal >= 0.30 ? 'var(--primary)' : dVal >= 0.20 ? '#D97706' : 'var(--danger)';
+            return `
             <tr>
               <td>${it.Nomor}</td>
               <td><span class="badge-pill badge-indigo">${it.Sesi}</span></td>
-              <td style="max-width:320px;">${(it.Pertanyaan || '').substring(0, 80)}${(it.Pertanyaan || '').length > 80 ? '...' : ''}</td>
+              <td style="max-width:320px;">${escapeHtml((it.Pertanyaan || '').substring(0, 80))}${(it.Pertanyaan || '').length > 80 ? '...' : ''}</td>
               <td><strong>${it.Jawaban_Benar}</strong></td>
               <td>${it.jumlahBenar}/${it.totalJawab}</td>
               <td><strong>${it.persentaseBenar}%</strong></td>
               <td><span class="badge-pill ${difficultyBadge[it.tingkatKesulitan]}"><span class="dot"></span>${it.tingkatKesulitan}</span></td>
+              <td>
+                <span style="font-weight:700;color:${dColor};">${dVal}</span>
+                <div style="font-size:10.5px;color:var(--text-muted);">${it.dayaPembedaKategori || '-'}</div>
+              </td>
               <td style="font-size:11.5px;">A:${it.distribusi.A} · B:${it.distribusi.B} · C:${it.distribusi.C} · D:${it.distribusi.D} · Kosong:${it.distribusi.Kosong}</td>
-            </tr>`).join('');
+            </tr>`;
+          }).join('');
         })
-        .withFailureHandler(err => { tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state" style="color:var(--danger);">${err.message}</div></td></tr>`; })
+        .withFailureHandler(err => { tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state" style="color:var(--danger);">${err.message}</div></td></tr>`; })
         .getItemAnalysis(idUjian);
     }
     

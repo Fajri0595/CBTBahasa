@@ -23,6 +23,26 @@
  * — persis seperti nilai yang dulu diterima withSuccessHandler().
  */
 /**
+ * Ambil token sesi aktif dari localStorage (staf atau peserta) untuk
+ * dikirimkan ke backend GAS pada setiap pemanggilan REST API.
+ */
+function getActiveAuthToken() {
+  try {
+    const staff = localStorage.getItem('cbt_staff');
+    if (staff) {
+      const parsed = JSON.parse(staff);
+      if (parsed && parsed.token) return parsed.token;
+    }
+    const participant = localStorage.getItem('cbt_participant');
+    if (participant) {
+      const parsed = JSON.parse(participant);
+      if (parsed && parsed.token) return parsed.token;
+    }
+  } catch (e) {}
+  return null;
+}
+
+/**
  * Kirim satu aksi + argumen ke backend GAS dengan mekanisme Resilience Retry
  * (Exponential Backoff + Jitter). Mengatasi konkurensi puncak atau gangguan
  * sementara pada Google Apps Script tanpa membuat request langsung gagal.
@@ -31,6 +51,10 @@ async function callServer(action, args, maxRetries = 3) {
   let attempt = 0;
   let lastError = null;
 
+  const token = getActiveAuthToken();
+  const payload = { action: action, args: args || [] };
+  if (token) payload.token = token;
+
   while (attempt < maxRetries) {
     try {
       const res = await fetch(GAS_URL, {
@@ -38,7 +62,7 @@ async function callServer(action, args, maxRetries = 3) {
         // WAJIB text/plain — Content-Type application/json memicu CORS
         // preflight (OPTIONS) yang tidak ditangani Apps Script Web App.
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: action, args: args || [] })
+        body: JSON.stringify(payload)
       });
 
       // Jika server mengembalikan status overload atau server error, coba ulang
@@ -49,7 +73,23 @@ async function callServer(action, args, maxRetries = 3) {
         throw new Error('HTTP ' + res.status + ' dari server saat memanggil aksi "' + action + '"');
       }
 
-      return await res.json();
+      const json = await res.json();
+
+      // Tangani otomatis jika sesi kedaluwarsa atau tidak valid
+      if (json && json.success === false && typeof json.message === 'string' && json.message.includes('Sesi login Anda tidak valid')) {
+        console.warn('[CBT Auth]', json.message);
+        if (localStorage.getItem('cbt_staff')) {
+          localStorage.removeItem('cbt_staff');
+          if (typeof showToast === 'function') {
+            showToast('Sesi Berakhir', 'Sesi autentikasi Anda telah berakhir. Silakan login kembali.', 'warning');
+          }
+          if (typeof showView === 'function') {
+            setTimeout(() => showView('view-staff-login'), 1200);
+          }
+        }
+      }
+
+      return json;
     } catch (err) {
       lastError = err;
       attempt++;
@@ -70,44 +110,52 @@ async function callServer(action, args, maxRetries = 3) {
 
 /**
  * Buat shim yang meniru API chainable google.script.run.
- * Property apa pun yang diakses SELAIN withSuccessHandler/withFailureHandler
- * dianggap sebagai nama aksi backend yang akan dipanggil.
+ * Setiap panggilan menghasilkan runner baru (Thread-Safe) untuk mencegah
+ * race-condition saat ada beberapa request berjalan paralel.
  */
 function createGasRunShim() {
-  let pendingSuccess = null;
-  let pendingFailure = null;
-  let proxy; // deklarasi lebih dulu supaya bisa direferensikan di dalam handler
+  function createRunner() {
+    let pendingSuccess = null;
+    let pendingFailure = null;
+    let runnerProxy;
 
-  const handler = {
+    const handler = {
+      get(_target, prop) {
+        if (prop === 'withSuccessHandler') {
+          return function (fn) { pendingSuccess = fn; return runnerProxy; };
+        }
+        if (prop === 'withFailureHandler') {
+          return function (fn) { pendingFailure = fn; return runnerProxy; };
+        }
+
+        return function (...args) {
+          const onSuccess = pendingSuccess;
+          const onFailure = pendingFailure;
+          pendingSuccess = null;
+          pendingFailure = null;
+
+          callServer(prop, args)
+            .then(result => { if (onSuccess) onSuccess(result); })
+            .catch(err => {
+              if (onFailure) onFailure(err);
+              else console.error('[gasRun] Aksi "' + prop + '" gagal:', err);
+            });
+
+          return runnerProxy;
+        };
+      }
+    };
+
+    runnerProxy = new Proxy({}, handler);
+    return runnerProxy;
+  }
+
+  return new Proxy({}, {
     get(_target, prop) {
-      if (prop === 'withSuccessHandler') {
-        return function (fn) { pendingSuccess = fn; return proxy; };
-      }
-      if (prop === 'withFailureHandler') {
-        return function (fn) { pendingFailure = fn; return proxy; };
-      }
-
-      // prop = nama aksi/fungsi backend, mis. "verifyParticipantAccess"
-      return function (...args) {
-        const onSuccess = pendingSuccess;
-        const onFailure = pendingFailure;
-        pendingSuccess = null;
-        pendingFailure = null;
-
-        callServer(prop, args)
-          .then(result => { if (onSuccess) onSuccess(result); })
-          .catch(err => {
-            if (onFailure) onFailure(err);
-            else console.error('[gasRun] Aksi "' + prop + '" gagal:', err);
-          });
-
-        return proxy; // jaga-jaga kalau ada chain lanjutan
-      };
+      const runner = createRunner();
+      return runner[prop];
     }
-  };
-
-  proxy = new Proxy({}, handler);
-  return proxy;
+  });
 }
 
 // Objek global yang dipakai seluruh app.js — nama "gasRun" sengaja dipilih
