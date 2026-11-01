@@ -435,7 +435,7 @@
       <div class="page-header"><div><h2 data-i18n="hMyExams">My Exams (Ujian Saya)</h2><p data-i18n="pMyExams">Kelola paket ujian kebahasaan yang Anda buat.</p></div>
         <button class="btn-cbt btn-cbt-primary" onclick="openCreateExamForm()"><i class="bi bi-plus-lg"></i> <span data-i18n="btnCreateExam">Buat Ujian Baru</span></button>
       </div>
-      <div class="card-cbt" style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px;" id="dosenStatCards"></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(210px, 1fr));gap:16px;margin-bottom:20px;" id="dosenStatCards"></div>
       <div class="table-wrap"><table class="table-cbt" id="dosenExamTable">
         <thead><tr><th>Nama Ujian & Kode</th><th>Sesi & Soal</th><th>Status</th><th>Peserta</th><th>Jadwal</th><th>Aksi</th></tr></thead>
         <tbody id="dosenExamTableBody"></tbody>
@@ -555,15 +555,101 @@
 
     <!-- ══ ADMIN: Perbandingan Performa Antar Rombel ══ -->
     <section id="section-rombelComparison" class="content-section app-content">
-      <div class="page-header"><div><h2>Perbandingan Performa Antar Rombel</h2><p>Bandingkan rata-rata skor & tingkat kelulusan antar kelompok/batch peserta.</p></div></div>
-      <div class="filter-bar">
-        <select id="rombelExamFilter" class="input-cbt" onchange="loadRombelComparison()"><option value="">Semua Ujian</option></select>
+      <div class="page-header">
+        <div>
+          <h2>Perbandingan Performa Antar Rombel</h2>
+          <p>Bandingkan rata-rata skor &amp; tingkat kelulusan antar kelompok/batch peserta secara komparatif.</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <button class="btn-cbt btn-cbt-outline" onclick="loadRombelComparison()"><i class="bi bi-arrow-clockwise"></i> Refresh Data</button>
+        </div>
       </div>
-      <div class="card-cbt" style="margin-bottom:20px;"><canvas id="chartRombelComparison" height="220"></canvas></div>
-      <div class="table-wrap"><table class="table-cbt">
-        <thead><tr><th>Rombel</th><th>Jumlah Peserta</th><th>Rata-rata Skor</th><th>Tertinggi</th><th>Terendah</th><th>Lulus</th><th>Tidak Lulus</th><th>Tingkat Kelulusan</th></tr></thead>
-        <tbody id="rombelComparisonTableBody"></tbody>
-      </table></div>
+
+      <!-- Filter Bar -->
+      <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius-card);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:260px;">
+          <span style="font-size:13px;font-weight:600;color:var(--text-heading);white-space:nowrap;"><i class="bi bi-funnel"></i> Filter Ujian:</span>
+          <select id="rombelExamFilter" class="input-cbt" style="max-width:380px;" onchange="loadRombelComparison()">
+            <option value="">Semua Ujian</option>
+          </select>
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);font-weight:500;" id="rombelFilterInfo">Menampilkan metrik agregasi seluruh rombel</div>
+      </div>
+
+      <!-- Quick Metrics Summary Cards -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(210px, 1fr));gap:16px;margin-bottom:20px;" id="rombelStatCards"></div>
+
+      <!-- Dual-Chart Proportional Split Container -->
+      <div style="display:grid;grid-template-columns:1.35fr 1fr;gap:18px;margin-bottom:22px;" class="rombel-analytics-grid">
+        <!-- Chart 1: Rata-rata Skor per Rombel -->
+        <div class="card-cbt" style="display:flex;flex-direction:column;justify-content:space-between;">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+              <div>
+                <h3 style="font-size:15px;margin:0 0 2px 0;display:flex;align-items:center;gap:8px;">
+                  <i class="bi bi-bar-chart-fill" style="color:var(--primary);"></i> Rata-rata Skor per Rombel
+                </h3>
+                <p style="font-size:12px;color:var(--text-muted);margin:0;">Perbandingan performa nilai rata-rata antar kelompok peserta.</p>
+              </div>
+            </div>
+            <div style="position:relative;height:220px;width:100%;">
+              <canvas id="chartRombelComparison"></canvas>
+            </div>
+          </div>
+          <div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border-color);font-size:11.5px;color:var(--text-muted);display:flex;align-items:center;gap:6px;">
+            <i class="bi bi-info-circle"></i> Nilai dihitung dari peserta yang telah berstatus selesai.
+          </div>
+        </div>
+
+        <!-- Chart 2: Tingkat Kelulusan per Rombel (%) -->
+        <div class="card-cbt" style="display:flex;flex-direction:column;justify-content:space-between;">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+              <div>
+                <h3 style="font-size:15px;margin:0 0 2px 0;display:flex;align-items:center;gap:8px;">
+                  <i class="bi bi-pie-chart-fill" style="color:var(--accent-hover);"></i> Tingkat Kelulusan (%)
+                </h3>
+                <p style="font-size:12px;color:var(--text-muted);margin:0;">Persentase peserta yang berhasil mencapai passing grade.</p>
+              </div>
+            </div>
+            <div style="position:relative;height:220px;width:100%;">
+              <canvas id="chartRombelPassingRate"></canvas>
+            </div>
+          </div>
+          <div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border-color);font-size:11.5px;color:var(--text-muted);display:flex;align-items:center;gap:6px;">
+            <i class="bi bi-check-circle"></i> Ambang kelulusan mengacu pada passing score ujian.
+          </div>
+        </div>
+      </div>
+
+      <!-- Leaderboard Ranking Table -->
+      <div class="card-cbt" style="padding:0;overflow:hidden;">
+        <div style="padding:16px 20px;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+          <div>
+            <h3 style="font-size:15px;margin:0 0 2px 0;display:flex;align-items:center;gap:8px;">
+              <i class="bi bi-trophy-fill" style="color:#F59E0B;"></i> Peringkat &amp; Performa Komparatif Rombel
+            </h3>
+            <p style="font-size:12px;color:var(--text-muted);margin:0;">Rincian metrik kuantitatif dan rasio kelulusan per kelompok belajar.</p>
+          </div>
+          <span class="badge-pill badge-neutral" id="rombelCountBadge">0 Rombel</span>
+        </div>
+        <div class="table-wrap" style="margin:0;border:none;">
+          <table class="table-cbt">
+            <thead>
+              <tr>
+                <th style="width:65px;text-align:center;">Rank</th>
+                <th>Nama Rombel</th>
+                <th style="text-align:center;">Peserta</th>
+                <th style="text-align:center;">Rata-rata</th>
+                <th style="text-align:center;">Rentang (Min - Max)</th>
+                <th style="text-align:center;">Kelulusan Peserta</th>
+                <th style="min-width:180px;">Rasio Kelulusan (%)</th>
+              </tr>
+            </thead>
+            <tbody id="rombelComparisonTableBody"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <!-- ══ DOSEN/ADMIN: Exam Results ══ -->
@@ -575,7 +661,7 @@
           <button class="btn-cbt btn-cbt-outline" onclick="downloadResultsExcel()"><i class="bi bi-file-earmark-excel"></i> Unduh Rekap (Excel)</button>
         </div>
       </div>
-      <div class="card-cbt" style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px;" id="dosenResultStatCards"></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(210px, 1fr));gap:16px;margin-bottom:20px;" id="dosenResultStatCards"></div>
       <div class="table-wrap"><table class="table-cbt">
         <thead><tr><th>Peserta</th><th>Listening</th><th>Structure</th><th>Reading</th><th>Total Skor</th><th>Status</th></tr></thead>
         <tbody id="dosenResultsTableBody"></tbody>
@@ -735,7 +821,7 @@
       <div class="filter-bar">
         <select id="reportExamFilter" class="input-cbt" onchange="loadGlobalReport()"><option value="">Semua Ujian</option></select>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px;" id="reportStatCards"></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(210px, 1fr));gap:16px;margin-bottom:20px;" id="reportStatCards"></div>
       <div class="table-wrap"><table class="table-cbt">
         <thead><tr><th>Peserta</th><th>Ujian</th><th>Listening</th><th>Structure</th><th>Reading</th><th>Total</th><th>Status</th></tr></thead>
         <tbody id="globalReportTableBody"></tbody>

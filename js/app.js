@@ -385,12 +385,19 @@
     // SPA NAVIGATION
     // ════════════════════════════════════════════════════════
     function navigateTo(sectionId) {
-      document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.content-section').forEach(s => {
+        s.classList.remove('active', 'page-enter-active');
+      });
       const target = document.getElementById('section-' + sectionId);
-      if (target) target.classList.add('active');
-    
+      if (target) {
+        target.classList.add('active');
+        void target.offsetWidth; // Restart CSS keyframe animation for dynamic motion graphics
+        target.classList.add('page-enter-active');
+      }
+
       document.querySelectorAll('#staffNavMenu a').forEach(a => a.classList.toggle('active', a.dataset.section === sectionId));
       document.getElementById('staffSidebar').classList.remove('show');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     
       const loaders = {
         dosenDashboard: loadDosenDashboard,
@@ -3209,53 +3216,220 @@
       }).getAllExamsAdmin();
       loadRombelComparison();
     }
-    
+
     function loadRombelComparison() {
       const idUjian = document.getElementById('rombelExamFilter').value;
       const tbody = document.getElementById('rombelComparisonTableBody');
-      tbody.innerHTML = `<tr><td colspan="8"><div class="skeleton" style="height:40px;"></div></td></tr>`;
-    
+      const statContainer = document.getElementById('rombelStatCards');
+      const badgeCount = document.getElementById('rombelCountBadge');
+      const infoLabel = document.getElementById('rombelFilterInfo');
+
+      tbody.innerHTML = '<tr><td colspan="7"><div class="skeleton" style="height:48px;"></div></td></tr>';
+
       gasRun
         .withSuccessHandler(res => {
-          if (!res) { tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state" style="color:var(--danger);">Tidak ada respons dari server.</div></td></tr>`; return; }
-          if (!res.success) { tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state" style="color:var(--danger);">${res.message}</div></td></tr>`; return; }
-    
-          const data = res.data;
-          if (!data.length) {
-            tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><i class="bi bi-bar-chart"></i>Belum ada data hasil ujian untuk dibandingkan.</div></td></tr>`;
-            renderRombelChart([], []);
+          if (!res) {
+            tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state" style="color:var(--danger);">Tidak ada respons dari server.</div></td></tr>';
             return;
           }
-    
-          tbody.innerHTML = data.map(r => `
-            <tr>
-              <td><strong>${r.rombel}</strong></td>
-              <td>${r.totalPeserta}</td>
-              <td><strong>${r.rataRata}</strong></td>
-              <td>${r.tertinggi}</td>
-              <td>${r.terendah}</td>
-              <td>${r.lulus}</td>
-              <td>${r.tidakLulus}</td>
-              <td>${r.tingkatKelulusan}%</td>
-            </tr>`).join('');
-    
-          renderRombelChart(data.map(r => r.rombel), data.map(r => r.rataRata));
+          if (!res.success) {
+            tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state" style="color:var(--danger);">' + escapeHtml(res.message) + '</div></td></tr>';
+            return;
+          }
+
+          const rawData = res.data || [];
+          if (!rawData.length) {
+            tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state" style="padding:32px 0;"><i class="bi bi-bar-chart"></i>Belum ada data hasil ujian untuk rombel yang dipilih.</div></td></tr>';
+            if (statContainer) statContainer.innerHTML = '';
+            if (badgeCount) badgeCount.textContent = '0 Rombel';
+            renderRombelDualCharts([], [], []);
+            return;
+          }
+
+          // Urutkan data berdasarkan Rata-rata Skor tertinggi (Leaderboard Ranking)
+          const data = rawData.slice().sort((a, b) => (Number(b.rataRata) || 0) - (Number(a.rataRata) || 0));
+
+          // Hitung Metrik Ringkasan (KPI Cards)
+          const totalRombel = data.length;
+          const totalPesertaAll = data.reduce((acc, r) => acc + (Number(r.totalPeserta) || 0), 0);
+          const topBatch = data[0];
+          const totalWeightScore = data.reduce((acc, r) => acc + ((Number(r.rataRata) || 0) * (Number(r.totalPeserta) || 0)), 0);
+          const avgOverall = totalPesertaAll > 0 ? Math.round(totalWeightScore / totalPesertaAll) : 0;
+
+          if (badgeCount) {
+            badgeCount.innerHTML = '<i class="bi bi-collection"></i> ' + totalRombel + ' Rombel Teranalisis';
+          }
+          if (infoLabel) {
+            infoLabel.textContent = idUjian ? 'Menampilkan data untuk ujian terpilih' : 'Menampilkan metrik agregasi seluruh rombel';
+          }
+
+          if (statContainer) {
+            statContainer.innerHTML =
+              statCard('bi-collection-fill', 'icon-bg-teal', totalRombel, 'Total Rombel', '<i class="bi bi-layers"></i> Kelompok batch aktif') +
+              statCard('bi-people-fill', 'icon-bg-indigo', totalPesertaAll, 'Total Peserta', '<i class="bi bi-person-check"></i> Peserta selesai ujian') +
+              statCard('bi-trophy-fill', 'icon-bg-amber', topBatch ? escapeHtml(topBatch.rombel) : '-', 'Batch Terbaik (#1)', '<i class="bi bi-award"></i> Skor: ' + (topBatch ? topBatch.rataRata : 0)) +
+              statCard('bi-graph-up-arrow', 'icon-bg-coral', avgOverall, 'Rata-rata Keseluruhan', '<i class="bi bi-speedometer2"></i> Skala TOEFL Institusi');
+          }
+
+          // Render Tabel Leaderboard Rombel
+          tbody.innerHTML = data.map((r, idx) => {
+            let rankBadge = '<span class="badge-rank rank-normal">' + (idx + 1) + '</span>';
+            if (idx === 0) rankBadge = '<span class="badge-rank rank-gold" title="Peringkat 1">🥇 1</span>';
+            else if (idx === 1) rankBadge = '<span class="badge-rank rank-silver" title="Peringkat 2">🥈 2</span>';
+            else if (idx === 2) rankBadge = '<span class="badge-rank rank-bronze" title="Peringkat 3">🥉 3</span>';
+
+            const passingPct = Number(r.tingkatKelulusan) || 0;
+            const barColor = passingPct >= 75 ? '#10B981' : (passingPct >= 50 ? '#0D9488' : '#F59E0B');
+
+            return `
+              <tr>
+                <td style="text-align:center;">${rankBadge}</td>
+                <td>
+                  <div style="font-weight:700;color:var(--text-heading);font-size:13.5px;">${escapeHtml(r.rombel)}</div>
+                </td>
+                <td style="text-align:center;">
+                  <span class="badge-pill badge-neutral" style="font-size:12px;"><i class="bi bi-person"></i> ${r.totalPeserta}</span>
+                </td>
+                <td style="text-align:center;">
+                  <span style="font-family:'Poppins',sans-serif;font-weight:700;font-size:14px;color:var(--primary);">${r.rataRata}</span>
+                </td>
+                <td style="text-align:center;">
+                  <span style="font-size:12.5px;color:var(--text-muted);font-weight:500;">${r.terendah} — ${r.tertinggi}</span>
+                </td>
+                <td style="text-align:center;">
+                  <span class="badge-pill badge-success" style="font-size:11px;" title="Jumlah Lulus"><i class="bi bi-check-circle"></i> ${r.lulus} Lulus</span>
+                  <span class="badge-pill badge-danger" style="font-size:11px;margin-left:4px;" title="Jumlah Tidak Lulus"><i class="bi bi-x-circle"></i> ${r.tidakLulus}</span>
+                </td>
+                <td>
+                  <div style="display:flex;align-items:center;gap:10px;">
+                    <div style="flex:1;background:rgba(226,232,240,0.8);border-radius:999px;height:8px;overflow:hidden;">
+                      <div style="width:${Math.min(passingPct, 100)}%;background:${barColor};height:100%;border-radius:999px;transition:width .4s ease;"></div>
+                    </div>
+                    <span style="font-size:12px;font-weight:700;color:var(--text-heading);width:45px;text-align:right;">${passingPct}%</span>
+                  </div>
+                </td>
+              </tr>`;
+          }).join('');
+
+          // Render Dual Charts: Skor & Kelulusan
+          renderRombelDualCharts(data.map(r => r.rombel), data.map(r => Number(r.rataRata) || 0), data.map(r => Number(r.tingkatKelulusan) || 0));
         })
-        .withFailureHandler(err => { tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state" style="color:var(--danger);">${err.message}</div></td></tr>`; })
+        .withFailureHandler(err => {
+          tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state" style="color:var(--danger);">' + escapeHtml(err.message) + '</div></td></tr>';
+        })
         .getRombelComparison(idUjian || null);
     }
-    
-    function renderRombelChart(labels, values) {
-      const ctx = document.getElementById('chartRombelComparison');
-      if (!ctx) return;
-      if (appState.chartInstances.rombel) appState.chartInstances.rombel.destroy();
-      appState.chartInstances.rombel = new Chart(ctx, {
-        type: 'bar',
-        data: { labels, datasets: [{ label: 'Rata-rata Skor', data: values, backgroundColor: '#0F766E', borderRadius: 8 }] },
-        options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
-      });
+
+    function renderRombelDualCharts(labels, scores, passingRates) {
+      // 1. Chart Rata-rata Skor per Rombel
+      const ctxSkor = document.getElementById('chartRombelComparison');
+      if (ctxSkor) {
+        if (appState.chartInstances.rombel) appState.chartInstances.rombel.destroy();
+        
+        const palette = ['#0D9488', '#2563EB', '#F59E0B', '#7C3AED', '#EC4899', '#10B981', '#06B6D4'];
+        const barColors = labels.map((_, i) => palette[i % palette.length]);
+
+        appState.chartInstances.rombel = new Chart(ctxSkor, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Rata-rata Skor',
+              data: scores,
+              backgroundColor: barColors,
+              borderRadius: 6,
+              borderSkipped: false,
+              maxBarThickness: 32
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: 'rgba(15, 23, 42, 0.92)',
+                titleFont: { family: 'Poppins', size: 12, weight: '600' },
+                bodyFont: { family: 'Inter', size: 11.5 },
+                padding: 9,
+                cornerRadius: 7,
+                callbacks: {
+                  label: ctx => ' Rata-rata: ' + ctx.raw + ' (Skala TOEFL)'
+                }
+              }
+            },
+            scales: {
+              x: {
+                grid: { display: false },
+                ticks: { color: '#334155', font: { family: 'Inter', size: 11, weight: '600' } }
+              },
+              y: {
+                beginAtZero: true,
+                grid: { color: 'rgba(226, 232, 240, 0.7)' },
+                ticks: { color: '#64748B', font: { family: 'Inter', size: 11 } }
+              }
+            }
+          }
+        });
+      }
+
+      // 2. Chart Tingkat Kelulusan per Rombel (Horizontal Bar Chart)
+      const ctxLulus = document.getElementById('chartRombelPassingRate');
+      if (ctxLulus) {
+        if (appState.chartInstances.rombelLulus) appState.chartInstances.rombelLulus.destroy();
+
+        appState.chartInstances.rombelLulus = new Chart(ctxLulus, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Kelulusan (%)',
+              data: passingRates,
+              backgroundColor: passingRates.map(p => p >= 75 ? '#10B981' : (p >= 50 ? '#0D9488' : '#F59E0B')),
+              borderRadius: 6,
+              borderSkipped: false,
+              maxBarThickness: 24
+            }]
+          },
+          options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: 'rgba(15, 23, 42, 0.92)',
+                titleFont: { family: 'Poppins', size: 12, weight: '600' },
+                bodyFont: { family: 'Inter', size: 11.5 },
+                padding: 9,
+                cornerRadius: 7,
+                callbacks: {
+                  label: ctx => ' Kelulusan: ' + ctx.raw + '%'
+                }
+              }
+            },
+            scales: {
+              x: {
+                min: 0,
+                max: 100,
+                grid: { color: 'rgba(226, 232, 240, 0.7)' },
+                ticks: {
+                  callback: val => val + '%',
+                  color: '#64748B',
+                  font: { family: 'Inter', size: 10.5 }
+                }
+              },
+              y: {
+                grid: { display: false },
+                ticks: { color: '#334155', font: { family: 'Inter', size: 11, weight: '600' } }
+              }
+            }
+          }
+        });
+      }
     }
-    
+
+
     // ════════════════════════════════════════════════════════
     // IMPORT PESERTA MASSAL VIA CSV
     // ════════════════════════════════════════════════════════
