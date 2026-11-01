@@ -443,13 +443,43 @@
     <section id="section-manageParticipants" class="content-section app-content">
       <div class="page-header"><div><h2 data-i18n="hManageParticipants">Manajemen Peserta & Kode Akses</h2><p data-i18n="pManageParticipants">Kelola token peserta agar sesi ujian tetap privat per-rombel.</p></div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <button class="btn-cbt btn-cbt-outline" onclick="openPrintCodesModal()"><i class="bi bi-printer"></i> Cetak / Unduh Kode Akses</button>
+          <button class="btn-cbt btn-cbt-outline" onclick="openPrintCodesModal()"><i class="bi bi-printer"></i> Cetak / Unduh Slip</button>
           <button class="btn-cbt btn-cbt-outline" onclick="openImportParticipantsModal()"><i class="bi bi-file-earmark-arrow-up"></i> Import Peserta CSV</button>
           <button class="btn-cbt btn-cbt-primary" onclick="openGenerateCodesModal()"><i class="bi bi-key"></i> Buat Kode Akses Massal</button>
         </div>
       </div>
+
+      <!-- Quick Metrics Cards -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:14px;margin-bottom:18px;" id="participantMetricCards"></div>
+
+      <!-- Filter Bar & Segmented Status Tabs -->
+      <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius-card);padding:16px 18px;margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+          <div class="tab-pills" id="participantStatusTabs" style="margin-bottom:0;">
+            <button type="button" class="tab-pill" data-status="all" onclick="setParticipantStatusFilter('all', this)">Semua (<span id="countTabAll">0</span>)</button>
+            <button type="button" class="tab-pill active" data-status="Aktif" onclick="setParticipantStatusFilter('Aktif', this)"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--success);margin-right:6px;"></span>Siap Pakai (<span id="countTabActive">0</span>)</button>
+            <button type="button" class="tab-pill" data-status="Used" onclick="setParticipantStatusFilter('Used', this)"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--primary);margin-right:6px;"></span>Sudah Ujian (<span id="countTabUsed">0</span>)</button>
+            <button type="button" class="tab-pill" data-status="Expired" onclick="setParticipantStatusFilter('Expired', this)"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--text-muted);margin-right:6px;"></span>Nonaktif (<span id="countTabExpired">0</span>)</button>
+          </div>
+          <div style="font-size:12.5px;color:var(--text-muted);font-weight:500;" id="participantFilteredCountLabel">Memuat data peserta...</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:2fr 1.2fr 1fr;gap:12px;" class="form-grid-3">
+          <div style="position:relative;">
+            <i class="bi bi-search" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px;"></i>
+            <input type="text" id="participantSearchInput" class="input-cbt" style="padding-left:36px;" placeholder="Cari nama peserta, kode akses, atau kontak..." oninput="handleParticipantFilterChange()">
+          </div>
+          <select id="participantExamFilter" class="input-cbt" onchange="handleParticipantFilterChange()">
+            <option value="">Semua Ujian Target</option>
+          </select>
+          <select id="participantRombelFilter" class="input-cbt" onchange="handleParticipantFilterChange()">
+            <option value="">Semua Rombel</option>
+          </select>
+        </div>
+      </div>
+
       <div class="table-wrap"><table class="table-cbt">
-        <thead><tr><th>Nama</th><th>Kontak</th><th>Rombel</th><th>Kode Akses</th><th>Ujian Target</th><th>Status</th><th>Aksi</th></tr></thead>
+        <thead><tr><th>Nama Peserta</th><th>Kontak</th><th>Rombel</th><th>Kode Akses</th><th>Ujian Target</th><th>Status</th><th style="text-align:right;">Aksi</th></tr></thead>
         <tbody id="participantTableBody"></tbody>
       </table></div>
     </section>

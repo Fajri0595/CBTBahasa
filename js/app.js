@@ -1853,36 +1853,224 @@
     // ════════════════════════════════════════════════════════
     // ADMIN — PESERTA & KODE AKSES
     // ════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════
+    // ADMIN — PESERTA & KODE AKSES (UI/UX PROFESIONAL)
+    // ════════════════════════════════════════════════════════
+    window._participantFilter = {
+      status: 'Aktif', // DEFAULT: Hanya tampilkan kode aktif/siap pakai agar kode terpakai otomatis tersembunyi
+      search: '',
+      examId: '',
+      rombel: ''
+    };
+
     function loadParticipants() {
+      const tbody = document.getElementById('participantTableBody');
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7"><div class="skeleton" style="height:36px;"></div></td></tr>`;
+
       gasRun
         .withSuccessHandler(res => {
-          if (!res) { showToast('Koneksi Terputus', 'Tidak ada respons dari server. Periksa koneksi internet Anda, dan pastikan GAS_URL di js/config.js sudah diisi dengan URL Web App (/exec) yang benar dan aktif.', 'danger'); return; }
+          if (!res) {
+            showToast('Koneksi Terputus', 'Tidak ada respons dari server.', 'danger');
+            return;
+          }
           if (!res.success) return;
-          window._participantsCache = res.data;
-          document.getElementById('participantTableBody').innerHTML = res.data.length ? res.data.map(p => `
-            <tr>
-              <td>${p.Nama || '<em style="color:var(--text-muted);">Belum login</em>'}</td>
-              <td>${p.Kontak || '-'}</td>
-              <td><span class="badge-pill badge-indigo">${p.Rombel || 'Umum'}</span></td>
-              <td><code>${p.Kode_Akses}</code></td>
-              <td>${p.ID_Ujian_Target || '-'}</td>
-              <td>${accessStatusBadge(p.Status_Kode)}</td>
-              <td><button class="btn-icon-sm" title="Nonaktifkan" onclick="deactivateCode('${p.ID_Peserta}')"><i class="bi bi-slash-circle"></i></button></td>
-            </tr>`).join('') : `<tr><td colspan="7"><div class="empty-state"><i class="bi bi-key"></i>Belum ada kode akses dibuat.</div></td></tr>`;
+          window._participantsCache = res.data || [];
+          populateParticipantFilterOptions(window._participantsCache);
+          renderParticipantsTable();
         })
         .withFailureHandler(err => showToast('Error', err.message, 'danger'))
         .getAllParticipants();
-    
-      // isi dropdown ujian target untuk modal generate & modal cetak
+
+      // Isi dropdown ujian target untuk modal generate, modal cetak & filter tabel
       gasRun.withSuccessHandler(res => {
-          if (!res) { showToast('Koneksi Terputus', 'Tidak ada respons dari server. Periksa koneksi internet Anda, dan pastikan GAS_URL di js/config.js sudah diisi dengan URL Web App (/exec) yang benar dan aktif.', 'danger'); return; }
-        if (!res.success) return;
+        if (!res || !res.success) return;
         window._examsListCache = res.data;
-        document.getElementById('genCodeExamSelect').innerHTML = res.data.map(u => `<option value="${u.ID_Ujian}">${u.Nama_Ujian}</option>`).join('');
-        document.getElementById('printCodesExamSelect').innerHTML = '<option value="">Semua Ujian (semua kode akses)</option>' +
-          res.data.map(u => `<option value="${u.ID_Ujian}">${u.Nama_Ujian}</option>`).join('');
+        const examOpts = res.data.map(u => `<option value="${u.ID_Ujian}">${escapeHtml(u.Nama_Ujian)}</option>`).join('');
+        const genSelect = document.getElementById('genCodeExamSelect');
+        if (genSelect) genSelect.innerHTML = examOpts;
+        const printSelect = document.getElementById('printCodesExamSelect');
+        if (printSelect) printSelect.innerHTML = '<option value="">Semua Ujian (semua kode akses)</option>' + examOpts;
+        populateParticipantFilterOptions(window._participantsCache || []);
       }).getAllExamsAdmin();
     }
+
+    function populateParticipantFilterOptions(data) {
+      const examFilter = document.getElementById('participantExamFilter');
+      if (examFilter && window._examsListCache) {
+        const currentVal = examFilter.value;
+        const examIds = Array.from(new Set(data.map(p => p.ID_Ujian_Target).filter(Boolean)));
+        examFilter.innerHTML = '<option value="">Semua Ujian Target</option>' +
+          examIds.map(id => {
+            const exam = (window._examsListCache || []).find(u => u.ID_Ujian === id);
+            const name = exam ? exam.Nama_Ujian : id;
+            return `<option value="${id}">${escapeHtml(name)}</option>`;
+          }).join('');
+        examFilter.value = currentVal;
+      }
+
+      const rombelFilter = document.getElementById('participantRombelFilter');
+      if (rombelFilter) {
+        const currentVal = rombelFilter.value;
+        const rombels = Array.from(new Set(data.map(p => p.Rombel || 'Umum').filter(Boolean))).sort();
+        rombelFilter.innerHTML = '<option value="">Semua Rombel</option>' +
+          rombels.map(r => `<option value="${r}">${escapeHtml(r)}</option>`).join('');
+        rombelFilter.value = currentVal;
+      }
+    }
+
+    function setParticipantStatusFilter(status, el) {
+      window._participantFilter.status = status;
+      const pills = document.querySelectorAll('#participantStatusTabs .tab-pill');
+      pills.forEach(p => p.classList.remove('active'));
+      if (el) el.classList.add('active');
+      renderParticipantsTable();
+    }
+
+    function handleParticipantFilterChange() {
+      const searchInput = document.getElementById('participantSearchInput');
+      const examFilter = document.getElementById('participantExamFilter');
+      const rombelFilter = document.getElementById('participantRombelFilter');
+
+      window._participantFilter.search = searchInput ? searchInput.value.trim().toLowerCase() : '';
+      window._participantFilter.examId = examFilter ? examFilter.value : '';
+      window._participantFilter.rombel = rombelFilter ? rombelFilter.value : '';
+
+      renderParticipantsTable();
+    }
+
+    function renderParticipantsTable() {
+      const all = window._participantsCache || [];
+      const tbody = document.getElementById('participantTableBody');
+      if (!tbody) return;
+
+      // 1. Hitung metrik keseluruhan
+      const countTotal = all.length;
+      const countActive = all.filter(p => p.Status_Kode === 'Aktif').length;
+      const countUsed = all.filter(p => p.Status_Kode === 'Used').length;
+      const countExpired = all.filter(p => p.Status_Kode === 'Expired').length;
+
+      // Update badge angka di tab filter
+      const tabAll = document.getElementById('countTabAll'); if (tabAll) tabAll.textContent = countTotal;
+      const tabAct = document.getElementById('countTabActive'); if (tabAct) tabAct.textContent = countActive;
+      const tabUsd = document.getElementById('countTabUsed'); if (tabUsd) tabUsd.textContent = countUsed;
+      const tabExp = document.getElementById('countTabExpired'); if (tabExp) tabExp.textContent = countExpired;
+
+      // Update kartu metrik ringkasan di atas tabel
+      const metricsWrap = document.getElementById('participantMetricCards');
+      if (metricsWrap) {
+        metricsWrap.innerHTML = `
+          ${statCard('bi-key-fill', 'icon-bg-teal', countTotal, 'Total Kode Dibuat')}
+          ${statCard('bi-check-circle-fill', 'icon-bg-success', countActive, 'Siap Pakai (Aktif)')}
+          ${statCard('bi-mortarboard-fill', 'icon-bg-indigo', countUsed, 'Peserta Selesai (Used)')}
+          ${statCard('bi-dash-circle-fill', 'icon-bg-coral', countExpired, 'Nonaktif / Kedaluwarsa')}
+        `;
+      }
+
+      // 2. Terapkan filter
+      const f = window._participantFilter;
+      let filtered = all.filter(p => {
+        if (f.status && f.status !== 'all') {
+          if (p.Status_Kode !== f.status) return false;
+        }
+        if (f.examId && p.ID_Ujian_Target !== f.examId) return false;
+        if (f.rombel && (p.Rombel || 'Umum') !== f.rombel) return false;
+        if (f.search) {
+          const name = (p.Nama || '').toLowerCase();
+          const code = (p.Kode_Akses || '').toLowerCase();
+          const contact = (p.Kontak || '').toLowerCase();
+          if (!name.includes(f.search) && !code.includes(f.search) && !contact.includes(f.search)) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      // Update label jumlah hasil filter
+      const countLabel = document.getElementById('participantFilteredCountLabel');
+      if (countLabel) {
+        countLabel.textContent = `Menampilkan ${filtered.length} dari ${countTotal} peserta`;
+      }
+
+      if (!filtered.length) {
+        let msg = 'Tidak ada peserta yang cocok dengan kriteria filter saat ini.';
+        if (f.status === 'Aktif' && countActive === 0 && countTotal > 0) {
+          msg = 'Seluruh kode akses telah selesai digunakan atau dinonaktifkan. Buka tab <strong>"Semua"</strong> atau <strong>"Sudah Ujian"</strong> untuk melihat riwayat.';
+        } else if (countTotal === 0) {
+          msg = 'Belum ada kode akses yang dibuat. Silakan klik tombol <strong>"Buat Kode Akses Massal"</strong> atau <strong>"Import Peserta CSV"</strong> di atas.';
+        }
+        tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><i class="bi bi-funnel"></i>${msg}</div></td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(p => {
+        const isUsed = p.Status_Kode === 'Used';
+        const isExpired = p.Status_Kode === 'Expired';
+        const isActive = p.Status_Kode === 'Aktif';
+
+        const rowStyle = isUsed ? 'opacity:0.88;background:rgba(15,118,110,0.02);' : isExpired ? 'opacity:0.65;' : '';
+        const examName = getExamNameById(p.ID_Ujian_Target);
+
+        // Aksi Kontekstual Sesuai Status
+        let actionButtons = '';
+        if (isActive) {
+          actionButtons = `
+            <div style="display:flex;gap:6px;justify-content:flex-end;">
+              <button class="btn-icon-sm" title="Salin Kode Akses" onclick="copyAccessCode('${p.Kode_Akses}')"><i class="bi bi-clipboard"></i></button>
+              <button class="btn-icon-sm" title="Nonaktifkan" onclick="deactivateCode('${p.ID_Peserta}')"><i class="bi bi-slash-circle"></i></button>
+            </div>`;
+        } else if (isUsed) {
+          actionButtons = `
+            <div style="display:flex;gap:6px;justify-content:flex-end;">
+              <button class="btn-cbt btn-cbt-outline" style="padding:4px 10px;font-size:11.5px;" onclick="viewParticipantScoreDetail('${p.ID_Peserta}', '${escapeHtml(p.Nama || 'Peserta')}')">
+                <i class="bi bi-bar-chart-line"></i> Lihat Nilai
+              </button>
+            </div>`;
+        } else {
+          // Expired / Nonaktif
+          actionButtons = `
+            <div style="display:flex;gap:6px;justify-content:flex-end;">
+              <button class="btn-icon-sm" title="Aktifkan Kembali" onclick="reactivateCode('${p.ID_Peserta}')"><i class="bi bi-arrow-counterclockwise"></i></button>
+              <button class="btn-icon-sm" style="color:var(--danger);" title="Hapus Data Peserta" onclick="deleteParticipant('${p.ID_Peserta}', '${escapeHtml(p.Nama || p.Kode_Akses)}')"><i class="bi bi-trash"></i></button>
+            </div>`;
+        }
+
+        return `
+          <tr style="${rowStyle}">
+            <td>
+              <div style="font-weight:600;font-size:13.5px;">${escapeHtml(p.Nama) || '<em style="color:var(--text-muted);font-weight:normal;">Belum login</em>'}</div>
+              <div style="font-size:11px;color:var(--text-muted);">${p.Tanggal_Daftar ? new Date(p.Tanggal_Daftar).toLocaleDateString('id-ID', {day:'2-digit', month:'short', year:'numeric'}) : '-'}</div>
+            </td>
+            <td>${escapeHtml(p.Kontak) || '<span style="color:var(--text-muted);">-</span>'}</td>
+            <td><span class="badge-pill badge-indigo">${escapeHtml(p.Rombel || 'Umum')}</span></td>
+            <td>
+              <div style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-canvas);padding:3px 8px;border-radius:6px;border:1px solid var(--border-color);">
+                <code style="font-size:13px;font-weight:700;color:var(--primary);">${p.Kode_Akses}</code>
+                <i class="bi bi-copy" style="cursor:pointer;font-size:11.5px;color:var(--text-muted);" title="Salin Kode" onclick="copyAccessCode('${p.Kode_Akses}')"></i>
+              </div>
+            </td>
+            <td><span style="font-size:12.5px;font-weight:500;">${escapeHtml(examName)}</span></td>
+            <td>${accessStatusBadge(p.Status_Kode)}</td>
+            <td style="text-align:right;">${actionButtons}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function copyAccessCode(code) {
+      if (!code) return;
+      navigator.clipboard.writeText(code).then(() => {
+        showToast('Kode Disalin', `Kode akses <strong>${code}</strong> berhasil disalin ke clipboard.`, 'success');
+      }).catch(() => {
+        const el = document.createElement('textarea');
+        el.value = code;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        showToast('Kode Disalin', `Kode akses <strong>${code}</strong> berhasil disalin.`, 'success');
+      });
+    }
+
     function accessStatusBadge(status) {
       const map = { Aktif: 'badge-success', Used: 'badge-indigo', Expired: 'badge-neutral' };
       return `<span class="badge-pill ${map[status] || 'badge-neutral'}"><span class="dot"></span>${status}</span>`;
@@ -1910,7 +2098,99 @@
     }
     function deactivateCode(id) {
       gasRun.withSuccessHandler(res => {
-          if (!res) { showToast('Koneksi Terputus', 'Tidak ada respons dari server. Periksa koneksi internet Anda, dan pastikan GAS_URL di js/config.js sudah diisi dengan URL Web App (/exec) yang benar dan aktif.', 'danger'); return; } showToast(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'danger'); loadParticipants(); }).deactivateAccessCode(id);
+          if (!res) { showToast('Koneksi Terputus', 'Tidak ada respons dari server.', 'danger'); return; }
+          showToast(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'danger');
+          loadParticipants();
+      }).deactivateAccessCode(id);
+    }
+
+    function reactivateCode(idPeserta) {
+      gasRun
+        .withSuccessHandler(res => {
+          if (!res) { showToast('Koneksi Terputus', 'Tidak ada respons dari server.', 'danger'); return; }
+          showToast(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'danger');
+          loadParticipants();
+        })
+        .withFailureHandler(err => showToast('Error', err.message, 'danger'))
+        .reactivateAccessCode(idPeserta);
+    }
+
+    function deleteParticipant(idPeserta, nama) {
+      if (!confirm(`Hapus permanen data peserta "${nama}"? Aksi ini tidak dapat dibatalkan.`)) return;
+      gasRun
+        .withSuccessHandler(res => {
+          if (!res) { showToast('Koneksi Terputus', 'Tidak ada respons dari server.', 'danger'); return; }
+          showToast(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'danger');
+          loadParticipants();
+        })
+        .withFailureHandler(err => showToast('Error', err.message, 'danger'))
+        .deleteParticipantAccess(idPeserta);
+    }
+
+    function viewParticipantScoreDetail(idPeserta, namaPeserta) {
+      gasRun
+        .withSuccessHandler(res => {
+          if (!res) { showToast('Koneksi Terputus', 'Tidak ada respons dari server.', 'danger'); return; }
+          if (!res.success || !res.data) {
+            showToast('Informasi', res.message || 'Hasil ujian belum tersedia.', 'warning');
+            return;
+          }
+          const d = res.data;
+          const examName = getExamNameById(d.ID_Ujian);
+          const waktuSelesaiStr = d.Waktu_Selesai ? new Date(d.Waktu_Selesai).toLocaleString('id-ID', { dateStyle:'medium', timeStyle:'short' }) : '-';
+
+          document.getElementById('modalGenericContent').innerHTML = `
+            <div class="modal-header-cbt">
+              <span><i class="bi bi-file-earmark-person"></i> Rincian Hasil Ujian Peserta</span>
+              <button style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;" onclick="closeModal('modalGeneric')">&times;</button>
+            </div>
+            <div class="modal-body-cbt">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
+                <div>
+                  <h3 style="margin:0;font-size:17px;font-weight:700;">${escapeHtml(namaPeserta)}</h3>
+                  <div style="font-size:12.5px;color:var(--text-muted);margin-top:2px;"><i class="bi bi-journal-bookmark"></i> ${escapeHtml(examName)}</div>
+                  <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;"><i class="bi bi-clock-history"></i> Selesai: ${waktuSelesaiStr}</div>
+                </div>
+                <div>
+                  <span class="badge-pill ${d.Status_Lulus === 'Lulus' ? 'badge-success' : 'badge-danger'}" style="font-size:12px;padding:6px 14px;">
+                    <span class="dot"></span>${d.Status_Lulus === 'Lulus' ? 'LULUS' : 'TIDAK LULUS'}
+                  </span>
+                </div>
+              </div>
+
+              <!-- Skor Total -->
+              <div class="card-cbt" style="text-align:center;padding:18px;background:var(--bg-canvas);border:1px solid var(--border-color);margin-bottom:16px;">
+                <div style="font-size:11.5px;color:var(--text-muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase;">TOTAL SKOR KONVERSI (TOEFL)</div>
+                <div style="font-size:38px;font-weight:800;color:var(--primary);margin-top:4px;">${d.Skor_Total || 0}</div>
+              </div>
+
+              <!-- Rincian Nilai Per Seksi -->
+              <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:10px;">
+                <div class="card-cbt" style="padding:12px;text-align:center;border-top:3px solid var(--primary);">
+                  <div style="font-size:11px;color:var(--text-muted);font-weight:600;">LISTENING</div>
+                  <div style="font-size:20px;font-weight:700;color:var(--text-main);margin-top:4px;">${d.Skor_Listening || 0}</div>
+                  <div style="font-size:10.5px;color:var(--text-muted);">Jawaban Benar</div>
+                </div>
+                <div class="card-cbt" style="padding:12px;text-align:center;border-top:3px solid #F59E0B;">
+                  <div style="font-size:11px;color:var(--text-muted);font-weight:600;">STRUCTURE</div>
+                  <div style="font-size:20px;font-weight:700;color:var(--text-main);margin-top:4px;">${d.Skor_Grammar || 0}</div>
+                  <div style="font-size:10.5px;color:var(--text-muted);">Jawaban Benar</div>
+                </div>
+                <div class="card-cbt" style="padding:12px;text-align:center;border-top:3px solid #6366F1;">
+                  <div style="font-size:11px;color:var(--text-muted);font-weight:600;">READING</div>
+                  <div style="font-size:20px;font-weight:700;color:var(--text-main);margin-top:4px;">${d.Skor_Reading || 0}</div>
+                  <div style="font-size:10.5px;color:var(--text-muted);">Jawaban Benar</div>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer-cbt">
+              <button class="btn-cbt btn-cbt-ghost" onclick="closeModal('modalGeneric')">Tutup</button>
+            </div>
+          `;
+          openModal('modalGeneric');
+        })
+        .withFailureHandler(err => showToast('Error', err.message, 'danger'))
+        .getParticipantResultDetail(idPeserta);
     }
     
     // ════════════════════════════════════════════════════════
