@@ -395,9 +395,17 @@
         target.classList.add('page-enter-active');
       }
 
-      document.querySelectorAll('#staffNavMenu a').forEach(a => a.classList.toggle('active', a.dataset.section === sectionId));
+      const parentNavMap = {
+        createExam: 'dosenDashboard',
+        uploadCSV: 'dosenDashboard',
+        manageQuestions: 'dosenDashboard',
+        examResultsDosen: 'dosenDashboard',
+        itemAnalysis: 'dosenDashboard'
+      };
+      const activeNavId = parentNavMap[sectionId] || sectionId;
+      document.querySelectorAll('#staffNavMenu a').forEach(a => a.classList.toggle('active', a.dataset.section === activeNavId));
       document.getElementById('staffSidebar').classList.remove('show');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      window.scrollTo(0, 0);
     
       const loaders = {
         dosenDashboard: loadDosenDashboard,
